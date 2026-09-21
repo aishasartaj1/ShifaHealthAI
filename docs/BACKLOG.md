@@ -71,13 +71,15 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Terraform `storage` module: `<project>-raw` + `<project>-quarantine` buckets, applied. Terraform `bigquery` module extended with the 8 curated/semantic table schemas (deferred from Phase 2), applied
 - [x] Tests: `pipelines/batch/tests/test_transforms.py` (21 tests — valid/invalid cases per table, FK checks, `ai_eligible` truth table, duplicate handling, a regression test for BigQuery's native `date` objects). Ran the actual pipeline against `shifahealthai`: counts match exactly (33/38 eligible, matching Phase 2's preview)
 
-### Phase 4 — Retrieval
-- [ ] `backend/src/retrieval/semantic.py`: embedding + vector search against `semantic.agent_eligible_knowledge`-derived chunks
-- [ ] `scripts/build_index.py`: chunk + embed eligible knowledge, populate vector index
-- [ ] `backend/src/retrieval/lexical.py`: keyword/BM25-style search
-- [ ] `backend/src/retrieval/hybrid.py`: merge, dedupe, rerank (configurable weights)
-- [ ] `backend/src/retrieval/governance.py`: query-time re-validation of candidate `knowledge_id`s against BigQuery
-- [ ] Tests: hybrid merge/rerank logic, governance filter rejects ineligible candidates
+### Phase 4 — Retrieval — **done** (2026-09-21)
+- [x] `backend/src/retrieval/semantic.py`: `rank_by_similarity` (pure cosine, no numpy) + `embed_query`/`fetch_embedding_corpus` (Vertex AI `text-embedding-005` via `google-genai`, corpus from `semantic.knowledge_embeddings`)
+- [x] `scripts/build_index.py`: embeds `semantic.agent_eligible_knowledge` (33 rows), writes `semantic.knowledge_embeddings`. Chunking is a no-op — summaries are already one short paragraph each, `chunk_id == knowledge_id`. Ran for real against `shifahealthai`; verified 33 rows × 768 dims
+- [x] `backend/src/retrieval/lexical.py`: `rank_by_bm25` (via `rank-bm25`) over title+summary, corpus fetched fresh from `semantic.agent_eligible_knowledge` every call (no separate lexical index to go stale)
+- [x] `backend/src/retrieval/hybrid.py`: `normalize_scores` (min-max) + `merge_and_rerank` (configurable `semantic_weight`/`lexical_weight`, dedupes by `knowledge_id`, a candidate from only one side gets 0 for the other)
+- [x] `backend/src/retrieval/governance.py`: `fetch_currently_eligible_ids` (fresh query, not the embedding snapshot) + `filter_eligible` (pure)
+- [x] `backend/src/retrieval/search.py`: `search_knowledge()` composing all of the above — the actual hybrid-RAG entrypoint, matching rag-design.md's diagram exactly
+- [x] Tests: 22 backend tests (`test_hybrid.py`, `test_governance.py`, `test_semantic_retrieval.py`, `test_lexical_retrieval.py`) — merge/rerank weighting and top-n behavior, governance filter keeps-only-eligible/preserves-order/empty-set cases, cosine edge cases, BM25 exact-term-match
+- [x] **Live drift test**: deleted `know_pcos_002` from `semantic.agent_eligible_knowledge` only (leaving its embedding in place — simulating eligibility changing after the index was built). Confirmed `semantic_search()` alone still returned it as the #1 match (0.839), but `search_knowledge()`'s governance re-check correctly dropped it from the final results. Restored via a batch-pipeline re-run
 
 ### Phase 5 — Agent
 - [ ] `agents/`: standalone Google ADK application (own `pyproject.toml`/requirements, own Dockerfile) — single Gemini orchestrating agent
@@ -153,6 +155,7 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 4 (Retrieval): chunk + embed `semantic.agent_eligible_knowledge` (33 rows) via Vertex AI embeddings
-into a vector index, build lexical search, and the hybrid merge/rerank + query-time governance re-check
-(`backend/src/retrieval/{semantic,lexical,hybrid,governance}.py`).
+Start Phase 5 (Agent): decide the ADK agent's tool-to-retrieval boundary (agent calls `backend`'s retrieval code
+via internal HTTP, per architecture.md's Service Topology, vs. importing it as a shared library — see the open
+question logged when Phase 5's tickets were written), then build `agents/` as a standalone ADK app with the six
+tools wired to `backend/src/retrieval/search.py`'s `search_knowledge()` and the BigQuery lookups.

@@ -1,0 +1,9 @@
+[
+  { "name": "knowledge_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "topic_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "title", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "summary", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "embedding", "type": "FLOAT64", "mode": "REPEATED", "description": "Vertex AI text embedding vector for `summary`. One row per knowledge_id - our summaries are already short enough to be a single chunk, so chunk_id == knowledge_id (see docs/DEVLOG.md)." },
+  { "name": "embedding_model", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "embedded_at", "type": "TIMESTAMP", "mode": "REQUIRED" }
+]

@@ -288,3 +288,65 @@ curated/semantic schemas now, rather than in Phase 2, was the planned sequencing
   the thing I'd just built, not by a user report.
 
 ---
+
+## 2026-09-21 — Phase 4: hybrid retrieval, real embeddings, a real governance-drift test
+
+**What:** Built `backend/src/retrieval/` — `semantic.py` (Vertex AI `text-embedding-005` via the `google-genai`
+SDK + pure cosine similarity, no numpy), `lexical.py` (BM25 via `rank-bm25`), `hybrid.py` (min-max score
+normalization + weighted merge/rerank, dedup by `knowledge_id`), `governance.py` (query-time eligibility
+re-check), and `search.py` (`search_knowledge()`, the composed entrypoint matching rag-design.md's diagram:
+semantic + lexical → merge/dedupe/rerank → governance filter → top governed candidates). Added
+`scripts/build_index.py`, the offline indexing step: reads `semantic.agent_eligible_knowledge`, embeds each
+summary, writes `semantic.knowledge_embeddings` (a new BigQuery table, extended into the `bigquery` Terraform
+module and applied). Ran it for real — 33 rows, 768-dim vectors each.
+
+**Why these specific choices:**
+- **Vector store is BigQuery, not Vertex AI Vector Search / Matching Engine.** At 33 rows, brute-force cosine
+  similarity in Python is microseconds — standing up a separate managed vector service would be pure ongoing
+  cost with zero benefit, and it would also mean the vector data lives in a second system that could drift from
+  the governance data it's derived from. This is the same "don't add a service without a concrete responsibility"
+  reasoning as the `agents/` split, just landing on the opposite conclusion here. Revisit if the corpus ever
+  grows past what brute-force scanning can handle.
+- **Chunking is a no-op.** Every knowledge summary is already one short paragraph — there's nothing to split.
+  `chunk_id == knowledge_id`. This would need real sliding-window chunking the day source documents stop being
+  short synthetic summaries and become actual multi-paragraph articles.
+- **`google-genai` over the older `vertexai` SDK**, since `agents/` (Phase 5) will need a Gemini client either
+  way and using one SDK for both embeddings and generation avoids carrying two Google AI client libraries.
+- **BM25's lexical corpus is fetched fresh from BigQuery on every call**, not materialized into its own index
+  table the way embeddings are. There's no expensive step to justify caching it (unlike embedding, which costs an
+  API call per row), so there's no lexical-side staleness to worry about — only the embeddings table can drift
+  from BigQuery's live governance state, which is exactly why the governance filter step still earns its place
+  even though the index is pre-filtered at build time.
+- **`search_knowledge()` asks for `top_n * 2` candidates before governance-filtering down to `top_n`** — otherwise
+  a query that happens to surface a couple of now-ineligible candidates would silently return fewer results than
+  asked for instead of backfilling from the next-best eligible ones.
+
+**The governance-drift test (the part worth remembering):** pre-filtering the index at build time
+(`agent_eligible_knowledge`, per rag-design.md's own spec) means that on a *freshly built* index, the governance
+filter has nothing to reject — every candidate is already eligible by construction. That's not the same as
+proving the filter *works*. So: queried `semantic_search()` alone for "What are common PCOS symptoms" — top
+match, `know_pcos_002`, score 0.839. Then deleted `know_pcos_002` from `semantic.agent_eligible_knowledge` only
+(NOT from `knowledge_embeddings`), simulating exactly the scenario docs/governance.md's "Enforcement points" #3
+describes: a record was eligible when indexed, and isn't anymore by query time. Re-ran the full
+`search_knowledge()` — `know_pcos_002` was completely absent from the governed results, even though
+`semantic_search()` alone (re-run at the same moment) still returned it as the top match. Restored by re-running
+the Phase 3 batch pipeline (which fully repopulates `agent_eligible_knowledge` from `curated.dim_knowledge`,
+where the row's `ai_eligible` flag was never touched).
+
+**Deviations from the plan:** None. `search_knowledge()`'s shape matches rag-design.md's diagram directly.
+
+**Interview notes:**
+- Be ready to explain *why* the vector index is built from `agent_eligible_knowledge` (pre-filtered) rather than
+  the full `knowledge_catalog`, since it's genuinely arguable either way — the plan's own Section 11.1 spec says
+  pre-filtered, and the governance filter's job is to catch drift between build-time and query-time, not to do
+  the primary filtering. I considered switching to the broader catalog specifically so governance would have
+  more to reject, then realized that would be solving a testing-convenience problem by changing production
+  design — the drift test above is the honest way to prove the same thing without that.
+- Know the asymmetry between lexical (always fresh, queries BigQuery every call) and semantic (can go stale,
+  depends on `build_index.py` having been re-run) — and be able to say which one the governance filter is really
+  protecting against.
+- `search_knowledge()` itself isn't unit tested — only its pieces are. That's a deliberate choice (it's IO
+  composition, not logic), verified instead by actually running it against real data, the same pattern as every
+  prior phase.
+
+---

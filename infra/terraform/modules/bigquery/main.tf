@@ -125,3 +125,11 @@ resource "google_bigquery_table" "topic_knowledge_summary" {
   deletion_protection = false
   schema              = file("${path.module}/schemas/semantic_topic_knowledge_summary.json")
 }
+
+resource "google_bigquery_table" "knowledge_embeddings" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.semantic.dataset_id
+  table_id            = "knowledge_embeddings"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/semantic_knowledge_embeddings.json")
+}

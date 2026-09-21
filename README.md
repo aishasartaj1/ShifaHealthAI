@@ -157,6 +157,23 @@ default — real reads/writes against BigQuery + GCS, just executed locally rath
 (appropriate at this data volume; pass `--runner DataflowRunner --temp-location gs://... --staging-location
 gs://...` to submit it as an actual Dataflow job instead).
 
+### Retrieval (Phase 4)
+
+```bash
+cd backend
+.venv/Scripts/pip install -r requirements.txt   # adds google-genai, rank-bm25 to the Phase 1 backend env
+cd ..
+python scripts/build_index.py --project shifahealthai   # embeds semantic.agent_eligible_knowledge -> semantic.knowledge_embeddings
+cd backend && .venv/Scripts/pytest tests/ -q
+```
+
+`backend/src/retrieval/` implements the hybrid RAG design from [docs/rag-design.md](docs/rag-design.md):
+`semantic.py` (cosine similarity over Vertex AI embeddings) + `lexical.py` (BM25) → `hybrid.py` (normalize +
+weighted merge/rerank) → `governance.py` (re-checks each candidate against BigQuery's *current* eligibility,
+not the embedding snapshot) → `search.py`'s `search_knowledge()` ties it together. Re-run `build_index.py`
+whenever the batch pipeline changes `agent_eligible_knowledge`; the lexical corpus and governance check always
+query BigQuery fresh, so only the embeddings can go stale between pipeline runs.
+
 ## Live demo
 
 Not yet deployed.

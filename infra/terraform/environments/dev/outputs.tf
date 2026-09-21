@@ -37,3 +37,23 @@ output "pubsub" {
     streaming_subscription = module.pubsub.streaming_subscription_name
   }
 }
+
+output "artifact_registry_repository_url" {
+  value = module.artifact_registry.repository_url
+}
+
+output "service_accounts" {
+  value = {
+    backend  = module.iam.backend_service_account_email
+    agents   = module.iam.agents_service_account_email
+    frontend = module.iam.frontend_service_account_email
+  }
+}
+
+output "service_urls" {
+  value = {
+    backend  = module.cloud_run_backend.url
+    agents   = module.cloud_run_agents.url
+    frontend = module.cloud_run_frontend.url
+  }
+}

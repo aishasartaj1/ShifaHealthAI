@@ -36,5 +36,8 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Claude Code session runtime state (not project config)
+.claude/scheduled_tasks.lock
+
 # Logs
 *.log

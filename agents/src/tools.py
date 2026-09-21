@@ -7,18 +7,41 @@ tool's function-calling schema from exactly those two things.
 
 from __future__ import annotations
 
+import logging
+
 import httpx
+from google.auth.transport import requests as google_auth_requests
+from google.oauth2 import id_token as google_id_token
 
 from src.config import get_settings
+
+logger = logging.getLogger(__name__)
+
+
+def _auth_headers(settings) -> dict[str, str]:
+    """Real service identity when it's available (a Google-signed ID token, minted for exactly
+    backend's URL as audience - see backend/src/api/internal.py's _verify_id_token), with the
+    shared-secret header always attached too as the local-dev fallback backend uses when no
+    Bearer token is present. fetch_id_token requires ambient SERVICE ACCOUNT credentials (true on
+    a real Cloud Run instance); a human's ADC credentials (local dev) can't mint one and this
+    raises - caught here, not treated as fatal, since the shared secret still gets the call through
+    locally. Skipped entirely when environment=="dev": discovering that ADC can't mint a token
+    takes several real seconds per call (multiple credential sources tried before giving up), a
+    cost worth avoiding rather than paying and catching on every local request."""
+    headers = {"X-Internal-Api-Key": settings.internal_api_key}
+    if settings.environment == "dev":
+        return headers
+    try:
+        token = google_id_token.fetch_id_token(google_auth_requests.Request(), settings.backend_base_url)
+        headers["Authorization"] = f"Bearer {token}"
+    except Exception:
+        logger.debug("No ID token available (expected in local dev); falling back to shared secret.")
+    return headers
 
 
 def _client() -> httpx.Client:
     settings = get_settings()
-    return httpx.Client(
-        base_url=settings.backend_base_url,
-        headers={"X-Internal-Api-Key": settings.internal_api_key},
-        timeout=30.0,
-    )
+    return httpx.Client(base_url=settings.backend_base_url, headers=_auth_headers(settings), timeout=30.0)
 
 
 def search_knowledge(query: str, topic: str = "") -> dict:

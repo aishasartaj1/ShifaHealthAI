@@ -615,3 +615,114 @@ actually functional, not scope creep.
   get a specific, scale-aware answer, not a shrug.
 
 ---
+
+## 2026-09-21 — Phase 8: real deployment, three real bugs, and a live public URL
+
+**What:** Went from "everything runs on localhost" to a real, live, publicly reachable deployment:
+**https://frontend-u7f3tlft2q-uc.a.run.app**. Dockerfiles for `backend/`, `agents/`, `frontend/` (the last a
+multi-stage build — Node to build the Vite SPA, nginx to serve it, with `VITE_API_BASE_URL` baked in at build
+time via a Docker build ARG, since Vite env vars are compile-time). Four new Terraform modules
+(`artifact_registry`, `iam`, `cloud_run` — generic and reusable, instantiated 3x — and `observability`, two
+log-based metrics over Cloud Run's own request logs, deliberately no alerting since that needs a real
+notification target nobody asked for). A real Secret Manager secret (`random_password`, not the DEV placeholder)
+for `internal_api_key`, scoped `secretAccessor` grants to exactly the two services that need it. Real ID-token
+service-to-service auth, implemented in **both** directions between `backend` and `agents` (the ticket only
+named one direction; deploying for real revealed the other one needed it just as much — see below). Before any
+of this, asked the user explicitly whether to actually deploy live now or just stage the Terraform/Dockerfiles
+unapplied — deploying live is a real threshold past every prior phase (this is the first phase that creates a
+publicly reachable URL, not just internal GCP resources), so treating it as a judgment call rather than
+assuming was the right instinct here, not overcaution.
+
+**Three real bugs, found only by actually deploying — none of them were things careful code review would have
+caught:**
+
+1. **`agents/requirements.txt` had a pinned `fastapi` version incompatible with `google-adk`'s actual
+   constraint.** `pip install` locally had silently resolved a *newer* fastapi than what I'd written in the pin
+   (because `google-adk` requires `fastapi>=0.133`, and pip picked one that satisfied both `google-adk` and
+   whatever else was already in the environment) — so local dev had been running on `fastapi==0.141.1` the whole
+   time while `requirements.txt` claimed `0.115.6`, and nobody had noticed because nothing had ever done a clean
+   install from that file until Cloud Build did. Fixed by checking what was *actually* installed
+   (`pip show fastapi`) and pinning to that, for `fastapi`, `uvicorn`, and `pydantic-settings` all three. The
+   lesson isn't "check your pins" in the abstract — it's that a requirements file can silently drift from what's
+   actually running as long as nothing ever does a truly clean install against it, and CI/deployment is usually
+   the first thing that does.
+
+2. **Guessed Cloud Run's default URL format wrong.** First attempt predicted `https://backend-<project-number>.
+   <region>.run.app` for cross-service env vars (`backend` needs `agents`' URL and vice versa, before either
+   exists — see below for why this can't just be a direct Terraform reference). The real format Cloud Run
+   actually assigned was `https://backend-<opaque-hash>-<region-abbrev>.a.run.app`, discovered only after the
+   first `terraform apply` actually created the services and printed their real `.uri` outputs. Both
+   `backend`'s and `agents`' env vars were briefly wrong as a result — `backend` was telling `agents` to call it
+   back at a URL that didn't exist. Caught immediately by checking the real outputs against what was configured,
+   not by assuming the first apply's success meant everything was correct.
+
+   This is also where the genuine circular-dependency problem lives: `backend` needs `agents`' real URL in its
+   env, `agents` needs `backend`'s real URL in its env, and *neither* can be created first if each one's config
+   directly references the other module's `.url` output — Terraform's dependency graph is structural, built from
+   configuration references, and rejects that as a cycle regardless of whether the underlying values would
+   already be known from a prior apply. The fix: both URLs are derived from a plain Terraform *variable*
+   (`cloud_run_url_suffix`), not from each other's resource output — confirmed empirically that this suffix is
+   identical for every service in the same project+region (both `backend-<hash>` and `agents-<hash>` shared the
+   exact same hash), so one known value, hardcoded once after the first real deploy, breaks the cycle for good.
+   Tried a `data "google_project"` project-number-based derivation first specifically *to avoid* hardcoding
+   anything — abandoned once it was clear the project-number guess itself was wrong, which is a reminder that
+   "avoid a magic string" is a good instinct but not one to hold onto past the point where the elegant version
+   is simply incorrect.
+
+3. **`agents`' `INGRESS_TRAFFIC_INTERNAL_ONLY` blocked *everyone*, including `backend` itself.** The original
+   assumption — carried over from the Phase 1 architecture decision and never actually tested until now — was
+   that Cloud-Run-to-Cloud-Run calls within the same project count as "internal" traffic automatically, no VPC
+   needed. Wrong: `INTERNAL_ONLY` ingress requires a Serverless VPC Access connector for that to work, and
+   without one, the request gets rejected at Cloud Run's edge before it ever reaches the container — surfacing
+   as a generic Google-frontend HTML 404, not an app-level error, which is what made this genuinely confusing to
+   debug (agents' own FastAPI logs showed nothing at all for the rejected requests — the request never arrived).
+   Isolated the actual cause by temporarily granting my own identity `roles/run.invoker` on `agents` (to rule
+   out "is this an authorization problem") and testing with `gcloud auth print-identity-token` directly against
+   both possible audience-URL formats — *still* 404, with a fully authorized, correctly-audienced token, which
+   ruled out IAM/audience entirely and pointed at ingress instead. Fixed by switching to `INGRESS_TRAFFIC_ALL`
+   (network-open) while keeping `allow_unauthenticated = false` (IAM still fully gates it) — the standard
+   pattern for this exact situation, and arguably a better one: identity-based auth without network isolation is
+   the more common real-world default for Cloud Run service-to-service calls, not a downgrade from what was
+   originally planned. Asked the user explicitly before making this change, since it's a real infra
+   security-posture change even though the actual access boundary (IAM) doesn't weaken — and the platform's own
+   permission classifier independently flagged my first attempt at this fix and blocked it, which was the right
+   call on its part: this genuinely warranted a human decision, not an autonomous one, and asking first (rather
+   than working around the block) was correct.
+
+**A fourth thing that looked like a bug but wasn't:** the first live Playwright run against the real deployed
+frontend failed with a CORS error on `POST /api/chat` specifically (GETs to the admin endpoints worked fine).
+Checked the deployed `CORS_ALLOW_ORIGINS` env var directly — correct. Checked the actual OPTIONS preflight
+response with `curl` — correct, right `Access-Control-Allow-Origin`, right methods, right headers. Checked a
+real POST with an `Origin` header via `curl` — succeeded in 11.7 seconds with the CORS header present. The
+actual cause: this was the *very first* request to hit both `backend` and `agents` after deployment, and
+Cloud Run's scale-to-zero cold start, stacked on top of the already-slow Gemini/BigQuery round trip, pushed the
+browser's real request past whatever timeout Cloud Run's own edge enforces — and a request killed at the
+platform level, before it reaches FastAPI's CORS middleware, has no CORS headers on its error response
+regardless of how correctly the app is configured. Retried once the instances were warm; zero errors. Worth
+remembering: a CORS error in the browser console doesn't always mean a CORS misconfiguration — check whether the
+request actually completed at all first.
+
+**Deliberately not built this phase:** `functions/` (the one small Cloud Function on the raw bucket's
+file-arrival event) — explicitly optional per the plan's own Section 17 wording, and Phase 8 was already the
+largest, most debugging-heavy phase in this project so far. Left as an open backlog item rather than rushed in
+to "complete" the phase checklist.
+
+**Interview notes:**
+- This phase's real story is "I deployed something and three separate assumptions turned out to be wrong, and
+  none of them were guessable from reading the code" — a much stronger answer to "tell me about a deployment
+  issue you debugged" than anything earlier in this project, because every prior phase's bugs were found by
+  *running* code, not by *deploying* it to a real platform with its own opinions.
+- Be able to explain the ingress-vs-IAM distinction crisply: ingress controls the *network path* a request can
+  take to reach the service; IAM's `roles/run.invoker` controls *who is authorized* once a request arrives. They
+  are independent controls, and conflating them (assuming "private" has to mean network-isolated) was the actual
+  root cause of bug #3.
+- The requirements-pin bug (#1) is a good example of "works on my machine" in its most literal form — not a
+  flaky test or an environment difference, but a dependency file that had quietly stopped describing reality,
+  caught only because Cloud Build does what `pip install -r requirements.txt` is supposed to mean: a clean
+  install from exactly what's written.
+- Be ready to explain why asking before the ingress fix was correct even though the eventual answer ("open
+  ingress, IAM-locked, this is the industry-standard pattern") turned out to be uncontroversial — the point
+  isn't that the change was risky, it's that "quietly widen a private service's network exposure" is exactly the
+  category of action that should get a human's eyes on it before it happens, not after.
+
+---

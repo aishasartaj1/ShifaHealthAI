@@ -2,6 +2,7 @@
 httpx.MockTransport so no real backend or GCP credentials are needed."""
 
 import json
+from types import SimpleNamespace
 
 import httpx
 
@@ -10,6 +11,43 @@ from src import tools
 
 def _mock_client(handler):
     return httpx.Client(transport=httpx.MockTransport(handler), base_url="http://backend.test")
+
+
+# environment="cloud" (not "dev") for these two: they specifically test the fetch_id_token path,
+# which _auth_headers now skips entirely when environment=="dev" (see its docstring for why).
+FAKE_SETTINGS = SimpleNamespace(
+    backend_base_url="http://backend.test", internal_api_key="dev-key", environment="cloud"
+)
+FAKE_DEV_SETTINGS = SimpleNamespace(
+    backend_base_url="http://backend.test", internal_api_key="dev-key", environment="dev"
+)
+
+
+def test_auth_headers_skips_id_token_attempt_in_local_dev(monkeypatch):
+    def _fail_if_called(*args, **kwargs):
+        raise AssertionError("fetch_id_token should not be called when environment == 'dev'")
+
+    monkeypatch.setattr(tools.google_id_token, "fetch_id_token", _fail_if_called)
+    headers = tools._auth_headers(FAKE_DEV_SETTINGS)
+    assert headers == {"X-Internal-Api-Key": "dev-key"}
+
+
+def test_auth_headers_falls_back_to_shared_secret_when_no_id_token(monkeypatch):
+    # Deployed, but ID-token minting still failed for some reason - the real failure mode this
+    # fallback exists for, not a hypothetical.
+    def _raise(*args, **kwargs):
+        raise Exception("no service account credentials available")
+
+    monkeypatch.setattr(tools.google_id_token, "fetch_id_token", _raise)
+    headers = tools._auth_headers(FAKE_SETTINGS)
+    assert headers == {"X-Internal-Api-Key": "dev-key"}
+
+
+def test_auth_headers_attaches_bearer_token_when_available(monkeypatch):
+    monkeypatch.setattr(tools.google_id_token, "fetch_id_token", lambda request, audience: "real-id-token")
+    headers = tools._auth_headers(FAKE_SETTINGS)
+    assert headers["Authorization"] == "Bearer real-id-token"
+    assert headers["X-Internal-Api-Key"] == "dev-key"  # still sent - defense in depth
 
 
 def test_search_knowledge_posts_expected_body(monkeypatch):

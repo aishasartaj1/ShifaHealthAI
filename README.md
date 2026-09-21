@@ -2,7 +2,11 @@
 
 **Governed Agentic Women's Health Knowledge Platform** — a DEV-only, publicly-deployable portfolio project on Google Cloud Platform.
 
-> Status: scaffolding stage. See [docs/BACKLOG.md](docs/BACKLOG.md) for the implementation plan and current phase.
+**Live demo: https://frontend-u7f3tlft2q-uc.a.run.app** — Cloud Run scales to zero when idle, so the first
+request after a while may take a few seconds to cold-start.
+
+> Status: Phase 8 of 10 (Platform) — live and deployed. See [docs/BACKLOG.md](docs/BACKLOG.md) for the full
+> implementation plan and current phase detail.
 
 ## What this is
 
@@ -277,6 +281,38 @@ Aggregates `curated.fact_user_question` into `semantic.question_analytics` (glob
 small re-runnable script, not continuous streaming aggregation — re-run it after any batch of new events lands.
 `GET /api/admin/analytics` serves the result; `AdminOverview.tsx`'s "Interaction analytics" section renders it.
 
+### Platform (Phase 8)
+
+Three Cloud Run services, deployed via Cloud Build + Terraform (see `infra/terraform/environments/dev/main.tf`
+for the full wiring):
+
+```bash
+# From each service's directory (backend/, agents/):
+gcloud builds submit --project=shifahealthai --tag=us-central1-docker.pkg.dev/shifahealthai/shifahealth/<service>:latest .
+
+# frontend/ needs the real backend URL baked in at build time (see frontend/cloudbuild.yaml):
+gcloud builds submit --project=shifahealthai --config=cloudbuild.yaml \
+  --substitutions=_VITE_API_BASE_URL=https://backend-u7f3tlft2q-uc.a.run.app,_IMAGE=us-central1-docker.pkg.dev/shifahealthai/shifahealth/frontend:latest .
+
+# Then, from infra/terraform/environments/dev:
+terraform apply
+```
+
+`backend` and `frontend` are public; `agents` requires a Google-issued ID token from exactly `backend`'s service
+account (`roles/run.invoker`, scoped to that one service) — Cloud Run's IAM, not network isolation, is the trust
+boundary (`agents`' ingress is `INGRESS_TRAFFIC_ALL`; see `infra/terraform/modules/cloud_run/variables.tf`'s
+`ingress` description for why `INGRESS_TRAFFIC_INTERNAL_ONLY` doesn't work here without a VPC connector this
+project doesn't have — found by deploying and testing, not anticipated in advance).
+
+`backend <-> agents` cross-references (each needs the other's real URL) can't be resolved via direct Terraform
+module-output references — that's a genuine circular dependency. `var.cloud_run_url_suffix` breaks it: see
+`infra/terraform/environments/dev/variables.tf` for how to determine this value for a fresh project/region.
+
 ## Live demo
 
-Not yet deployed.
+**https://frontend-u7f3tlft2q-uc.a.run.app**
+
+All three services scale to zero when idle (`min_instance_count = 0`), so the first request after a while cold-starts
+(a few extra seconds, most of it the container spinning up — subsequent requests are normal speed). Ask something
+like *"Can PCOS cause irregular periods?"* on the Assistant page, then look at `/admin`, `/admin/agents`, and
+`/admin/governance` to see the governance/observability layer behind it.

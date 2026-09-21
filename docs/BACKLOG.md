@@ -108,15 +108,20 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Tests: 14 new backend tests (event schema/route validation, including a test that a client cannot fabricate `QUESTION_ASKED`/`RESPONSE_GENERATED`), 9 new streaming-pipeline tests (validation, normalization, native-datetime handling). 100+ tests total across the repo
 - [x] **Real end-to-end verification**, not mocked: ran the actual Beam streaming pipeline against the real Pub/Sub subscription while firing real chat requests and interaction events; confirmed all 5 event types landed in `curated.fact_user_question` with correct structured fields; published two deliberately malformed messages directly to Pub/Sub and confirmed both were quarantined with accurate reasons; ran `refresh_analytics.py` and confirmed `GET /api/admin/analytics` returned the exact aggregated numbers; Playwright-verified the full browser flow (ask → source click → feedback click → related-topic click → deep-linked Topics page → Admin analytics tiles), zero console errors
 
-### Phase 8 — Platform
-- [ ] Terraform `cloud_run` module, instantiated twice: `backend` (public ingress) and `agents` (private/internal ingress, no public access)
-- [ ] Terraform `iam` module: dedicated service account per Cloud Run service; grant `backend`'s SA `roles/run.invoker` on the `agents` service specifically (not project-wide) — the enforced trust boundary from architecture.md's "Service topology"
-- [ ] Terraform `artifact_registry` module: repository for both container images
-- [ ] Secret Manager wiring for runtime config/secrets (no secrets in Git, ever), including `internal_api_key`
-- [ ] Replace `backend`'s `/internal/*` shared-secret auth (Phase 5's DEV stand-in) with real caller verification — either a Google-issued ID token check (`google.oauth2.id_token.verify_oauth2_token`) confirming the caller is `agents`' service account, or move `/internal/*` behind its own private-ingress boundary
-- [ ] Terraform `observability` module: Cloud Logging/Monitoring baseline for both services
-- [ ] Dockerfiles for `backend/`, `agents/`, and `frontend/` (grouped here rather than written piecemeal per phase)
-- [ ] `functions/`: one Cloud Function (raw-bucket file-arrival → ingestion-request event)
+### Phase 8 — Platform — **mostly done** (2026-09-21); `functions/` deferred, see Next action
+- [x] Terraform `cloud_run` module (generic, reusable), instantiated 3x: `backend` (public), `agents` (IAM-gated, not network-gated — see below), `frontend` (public). All three **live and verified**: https://frontend-u7f3tlft2q-uc.a.run.app
+- [x] Terraform `iam` module: one service account per service, least-privilege project roles, plus the scoped `backend`-SA-\>`roles/run.invoker`-on-`agents` binding (not project-wide) — the real, IAM-enforced trust boundary from architecture.md's Service Topology
+- [x] Terraform `artifact_registry` module: one Docker repo, all three images built via Cloud Build (`gcloud builds submit`) and pushed
+- [x] Secret Manager: `shifahealth-internal-api-key` (a real `random_password`, not the DEV placeholder), scoped `secretAccessor` grants to exactly the two services that need it
+- [x] Real caller verification for `/internal/*`: Google-issued ID token (`google.oauth2.id_token.verify_oauth2_token`), checked against `agents`' service account email, with the shared-secret header kept only as an explicit local-dev fallback. Implemented **both directions** — `agents` calling `backend`'s `/internal/*`, and `backend` calling `agents`' `/invoke` (the second direction wasn't in the original ticket wording but is exactly the same problem and was needed to make the live deployment work at all)
+- [x] Terraform `observability` module: two log-based metrics (request count, 5xx count) over Cloud Run's own request logs — deliberately no alert policies/notification channels (those need a real notification target nobody asked to create)
+- [x] Dockerfiles for `backend/`, `agents/`, `frontend/` (frontend: multi-stage, nginx, `VITE_API_BASE_URL` baked in at build time via a build ARG)
+- [ ] `functions/`: **not built this phase** — deferred to keep Phase 8 scoped to what was needed to get a live, working public deployment; see Next action
+
+**Three real bugs found by actually deploying, not by reasoning in advance** (full writeup in DEVLOG):
+1. `agents/requirements.txt` pinned a `fastapi` version incompatible with `google-adk`'s actual constraint — worked locally (pip had resolved a newer version there already) but failed in Cloud Build's clean install. Fixed by pinning to what was actually resolved.
+2. Guessed Cloud Run's default URL format wrong (project-number-based) — the real format uses an opaque per-project+region hash. Fixed by deriving both services' URLs from a variable (`cloud_run_url_suffix`) instead of a (wrong) formula, which also happens to be the only way to avoid a genuine circular Terraform dependency between `backend` and `agents` each needing the other's URL.
+3. `agents`' `INGRESS_TRAFFIC_INTERNAL_ONLY` silently blocked *everyone*, including `backend` itself — Cloud-Run-to-Cloud-Run internal calls need a Serverless VPC Access connector that was never set up; assumed (wrongly) it worked automatically. Fixed by switching to `INGRESS_TRAFFIC_ALL` + keeping IAM as the actual (and, it turns out, industry-standard) trust boundary.
 
 ### Phase 9 — CI/CD
 - [ ] `.github/workflows/`: PR pipeline — backend tests/lint, frontend tests/build, `terraform fmt`/`validate`/`plan`
@@ -163,10 +168,11 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 8 (Platform): Terraform `cloud_run` module (instantiated for both `backend` and `agents`), `iam`
-module (per-service accounts, the `backend -> agents` `run.invoker` binding), `artifact_registry`, Secret Manager
-wiring, `observability` module, and the one `functions/` Cloud Function. Also the right time to replace the
-`/internal/*` shared-secret auth with real Cloud Run IAM ID-token verification (ticketed back in Phase 5).
+Either: (a) build `functions/` — one Cloud Function on the raw bucket's file-arrival event, publishing an
+ingestion-signal message (small, explicitly optional per the plan — "demonstrates event integration without
+moving core business logic out of the main pipeline") — or (b) move on to Phase 9 (CI/CD): GitHub Actions PR
+checks (backend/frontend tests, `terraform fmt`/`validate`/`plan`) and a main-branch pipeline that builds/pushes
+images and deploys, now that the manual deploy steps from Phase 8 are proven and can be scripted.
 
 Note: `backend/src/services/trace_store.py` (agent traces) is still in-memory, not durable — that's a deliberate,
 narrower scope than it might sound: Phase 7 built durable storage for *interaction* events

@@ -42,17 +42,26 @@ The plan's single "FastAPI (Cloud Run)" box is implemented as **two** Cloud Run 
 2026-09-21 decision-log entry for why:
 
 ```
-React/Vite UI
+React/Vite UI  ── Cloud Run service "frontend", public
      |
      v  POST /api/chat, GET /api/topics, /api/admin/*   (public)
-FastAPI backend  ── Cloud Run service "backend", public ingress
+FastAPI backend  ── Cloud Run service "backend", public
      |
-     v  internal call, IAM-authenticated (service account invoker binding, no public ingress)
-ADK agent service ── Cloud Run service "agents", private ingress
+     v  ID-token-authenticated call (backend's SA is the only roles/run.invoker on agents)
+ADK agent service ── Cloud Run service "agents", public network ingress, IAM-gated
      |
      v
 Vertex AI Gemini + retrieval/governance tools
 ```
+
+All three are public-network-reachable (`INGRESS_TRAFFIC_ALL`) — "private" for `agents` means
+**IAM-gated, not network-isolated**: `allow_unauthenticated = false`, with only `backend`'s service account
+granted `roles/run.invoker`, scoped to that one service, not project-wide. Deploying an actual
+`INGRESS_TRAFFIC_INTERNAL_ONLY` restriction was tried first and found (by deploying and testing, not anticipated
+in advance) to require a Serverless VPC Access connector for Cloud-Run-to-Cloud-Run calls to work at all —
+without one, it silently blocks every caller, including `backend` itself. See the 2026-09-21 (Phase 8)
+decision-log entry. Identity-based (zero-trust) auth without network isolation is also simply the more common
+production pattern for this kind of service-to-service call — not a compromise made for this project's sake.
 
 - `backend/` — FastAPI. Public entrypoint for the frontend. Owns everything that *isn't* agent reasoning:
   topics/sources/knowledge lookups, admin/governance/analytics endpoints, request validation, session/trace
@@ -60,7 +69,7 @@ Vertex AI Gemini + retrieval/governance tools
 - `agents/` — a standalone [Google ADK](https://google.github.io/adk-docs/) application. Owns the orchestrating
   Gemini agent and its tools (`search_knowledge`, `get_knowledge_record`, `get_source_metadata`,
   `check_content_eligibility`, `query_health_topics`, `find_related_topics`). Deployed as its own Cloud Run
-  service with **no public ingress** — only the backend's service account is granted `roles/run.invoker` on it.
+  service; only `backend`'s service account can actually invoke it.
 - Why split them: mirrors how ADK is meant to run (as its own agent runtime, not embedded inline in an arbitrary
   web framework), gives a real IAM-enforced trust boundary to point to ("the web tier cannot reach Gemini or the
   retrieval tools directly — only the agent service can, and only the backend can reach the agent service"), and
@@ -70,24 +79,30 @@ Vertex AI Gemini + retrieval/governance tools
 
 ### The two HTTP relationships between backend and agents
 
-There are two, in opposite directions, for two different reasons:
+There are two, in opposite directions, for two different reasons — and, as of Phase 8, **both are protected the
+same way**: a Google-issued ID token, minted by the caller's own Cloud Run service-account identity
+(`google.oauth2.id_token.fetch_id_token`, audience = the callee's URL) and verified by the callee
+(`google.oauth2.id_token.verify_oauth2_token`, checking both signature and the caller's `email` claim).
 
 1. **`backend -> agents`**, for the chat flow: `backend/src/services/agent_client.py` calls `agents`' `POST
-   /invoke` to run the Gemini agent for a user message. This is the one the IAM `roles/run.invoker` binding above
-   actually protects, once deployed to Cloud Run's private ingress.
+   /invoke` to run the Gemini agent for a user message. Protected by the `roles/run.invoker` binding — Cloud Run
+   itself rejects an unauthenticated or wrongly-authenticated call before it ever reaches `agents`' application
+   code (confirmed directly: an unauthenticated call gets a `403` from Cloud Run's own edge).
 2. **`agents -> backend`**, for the agent's tools: each of the six tools (`agents/src/tools.py`) is a plain HTTP
    call into `backend`'s `/internal/*` API (`backend/src/api/internal.py`), which wraps
    `backend/src/repositories/bigquery.py` and `backend/src/retrieval/search.py`. `agents/` holds no BigQuery or
    Vertex-AI-embeddings credentials of its own — every retrieval/lookup call it makes is really backend doing the
    work on its behalf. This is what "Controlled agent access" (the principles table above) means concretely: the
    agent's only path to data is through these six HTTP calls, not a raw table or a shared library import.
+   `backend` has public ingress (the frontend needs to reach it), so there's no Cloud-Run-level IAM boundary the
+   way there is for (1) — `backend` verifies the token itself, at the application layer
+   (`_verify_id_token` in `internal.py`), checking the token's audience against `backend`'s own public URL and
+   its `email` claim against `agents`' service account.
 
-   `/internal/*`'s auth is a shared-secret header (`X-Internal-Api-Key`), **not** the same IAM mechanism as (1).
-   `backend` needs public Cloud Run ingress for the frontend, so there's no private-ingress IAM boundary to lean
-   on the way there is for `agents`. This is a deliberate DEV-appropriate simplification, not a production
-   pattern — see the Phase 5 entry in [DEVLOG.md](DEVLOG.md) and the Phase 8 ticket in [BACKLOG.md](BACKLOG.md)
-   for what would replace it (verifying the caller's Google-issued ID token, or moving `/internal/*` behind its
-   own private-ingress boundary).
+   Both directions keep a shared-secret header (`X-Internal-Api-Key`, from Secret Manager, not a hardcoded
+   value) as a fallback for local development, where a human's ADC credentials can't mint a service-account ID
+   token — `fetch_id_token` is skipped entirely when `environment == "dev"` rather than attempted and caught,
+   since discovering that ADC can't mint one takes several real seconds per call otherwise.
 
 ## End-to-end question flow
 
@@ -134,7 +149,7 @@ concrete later requirement justifies independent roles or a state machine.
 | Pub/Sub | Streaming application events and ingestion signals |
 | Vertex AI Gemini | Agent reasoning, tool calling, response generation |
 | Vertex AI embeddings / vector retrieval | Semantic RAG retrieval |
-| Cloud Run | Two services: FastAPI `backend` (public) and the ADK `agents` service (private, invoker-restricted to `backend`) |
+| Cloud Run | Three services, all live: FastAPI `backend` (public), the ADK `agents` service (public network ingress, invoker-restricted to `backend` via IAM), and `frontend` (static SPA, public) |
 | Cloud Functions | One small event-triggered ingestion responsibility |
 | Artifact Registry | Container images |
 | Secret Manager | Runtime secrets/configuration |
@@ -178,3 +193,17 @@ Record deviations from the source plan here as they happen, with rationale and d
   "simplest defensible option at this scale" reasoning used throughout this project. Note this phase did **not**
   migrate `backend/src/services/trace_store.py` (agent traces) to durable storage — it built durable storage for
   *interaction events* only; agent-trace persistence is a separate, still-open concern if it's ever needed.
+- _2026-09-21_ (Phase 8) — Deployed all three services live. `agents`' ingress is `INGRESS_TRAFFIC_ALL`, not
+  `INGRESS_TRAFFIC_INTERNAL_ONLY` as originally planned — internal-only Cloud-Run-to-Cloud-Run calls need a
+  Serverless VPC Access connector, discovered by deploying with `INTERNAL_ONLY` and finding that *no* caller
+  (including `backend`, including a manually-authorized human identity used to isolate the bug) could reach it.
+  IAM (`roles/run.invoker`, scoped to `backend`'s service account on that one service) is the real trust
+  boundary instead — see "The two HTTP relationships" above. Real ID-token verification (Phase 5's ticketed
+  follow-up) is implemented in both `backend -> agents` and `agents -> backend` directions, with the
+  shared-secret header kept only as a local-dev fallback (skipped entirely, not attempted-then-caught, when
+  `environment == "dev"` — a real several-seconds-per-call cost otherwise). `backend`/`agents`/`frontend` each
+  need one of the *other two* services' real URLs in their config; direct Terraform module-output references
+  between `backend` and `agents` would be a genuine circular dependency, so both are derived instead from
+  `var.cloud_run_url_suffix` — a value that had to be corrected once already, since the first guess at Cloud
+  Run's default URL format (project-number-based) was wrong; the real format is an opaque per-project+region
+  hash, confirmed against the actual `.uri` output.

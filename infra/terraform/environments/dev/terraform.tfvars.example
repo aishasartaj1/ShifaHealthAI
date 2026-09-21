@@ -1,3 +1,8 @@
 project_id  = "shifahealthai"
 region      = "us-central1"
 environment = "dev"
+
+# See variables.tf's cloud_run_url_suffix description for how to determine this for a fresh
+# project - deploy any one Cloud Run service first, read its real `.uri` output, and use the
+# part after "<service-name>-". Only needed once Phase 8's Cloud Run resources are in the config.
+cloud_run_url_suffix = "REPLACE_ME_AFTER_FIRST_CLOUD_RUN_DEPLOY"

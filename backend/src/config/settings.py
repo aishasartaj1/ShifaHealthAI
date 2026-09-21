@@ -19,14 +19,20 @@ class Settings(BaseSettings):
     gcp_region: str = "us-central1"
     cors_allow_origins: list[str] = ["http://localhost:5173"]
 
-    # Shared secret between backend and agents/ for the /internal/* routes (backend/src/api/internal.py).
-    # This is a DEV-appropriate stand-in for real Cloud Run IAM ID-token verification - see the Phase 5
-    # entry in docs/DEVLOG.md for why, and docs/BACKLOG.md's Phase 8 tickets for the real replacement.
+    # Local-dev fallback auth for /internal/* (backend/src/api/internal.py), used only when no
+    # Google ID token is presented. See that file's module docstring for the real (Phase 8)
+    # ID-token verification this is a fallback alongside, not a replacement for.
     internal_api_key: str = "dev-internal-key-change-me"
 
     # Where the private agents/ service lives (src/services/agent_client.py). In DEV, localhost;
     # in a real deployment, the agents Cloud Run service's private URL.
     agent_service_base_url: str = "http://localhost:8001"
+
+    # This backend's OWN public URL, and the agents service account email - both required for
+    # verifying an incoming ID token's audience/issuer in internal.py. Empty by default (local
+    # dev never receives a Bearer token anyway); set as real Cloud Run env vars once deployed.
+    public_base_url: str = ""
+    agents_service_account_email: str = ""
 
     # Pub/Sub topic interaction events are published to (src/services/pubsub.py), matching
     # infra/terraform/modules/pubsub's google_pubsub_topic name.

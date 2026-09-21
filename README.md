@@ -174,6 +174,40 @@ not the embedding snapshot) → `search.py`'s `search_knowledge()` ties it toget
 whenever the batch pipeline changes `agent_eligible_knowledge`; the lexical corpus and governance check always
 query BigQuery fresh, so only the embeddings can go stale between pipeline runs.
 
+### Agent (Phase 5)
+
+Port convention for local dev: `backend` on **8000**, `agents` on **8001**, `frontend` on **5173**.
+
+```bash
+# terminal 1 - backend (exposes /internal/* for the agent's tools)
+cd backend && .venv/Scripts/uvicorn src.main:app --port 8000
+
+# terminal 2 - agents (standalone ADK service)
+cd agents
+python -m venv .venv
+.venv/Scripts/activate
+pip install -r requirements-dev.txt
+cp .env.example .env
+pytest tests/ -q                        # mocked-HTTP tool tests + pure trace-logic tests, no live calls
+uvicorn src.main:app --port 8001
+
+# terminal 3 - talk to it
+curl -X POST http://localhost:8001/invoke -H "Content-Type: application/json" \
+  -d '{"message": "Can PCOS cause irregular periods?", "user_id": "demo"}'
+```
+
+`agents/` is a standalone [Google ADK](https://google.github.io/adk-docs/) app — one `LlmAgent` (Gemini via
+Vertex AI) with the plan's six tools (Section 12), each a thin HTTP call into `backend`'s `/internal/*` API
+(`agents/src/tools.py`); `backend` owns all BigQuery/Vertex AI retrieval access, `agents` owns none. Tool-call
+observability (`agents/src/trace.py`) is wired via ADK's `before_tool_callback`/`after_tool_callback`, isolated
+per-request with a `contextvars.ContextVar` so concurrent requests don't cross-contaminate traces. Session state
+(multi-turn memory) lives in one process-lifetime `InMemoryRunner` — recreating the runner per request was a real
+bug caught during Phase 5 (see [docs/DEVLOG.md](docs/DEVLOG.md)), not just a hypothetical one.
+
+`backend/src/services/agent_client.py` is backend's HTTP client for calling `agents`, proven against a live
+`agents` instance — it isn't wired to a public route yet; `POST /api/chat` (Phase 6) is what will call it from
+the frontend.
+
 ## Live demo
 
 Not yet deployed.

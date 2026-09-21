@@ -350,3 +350,90 @@ where the row's `ai_eligible` flag was never touched).
   prior phase.
 
 ---
+
+## 2026-09-21 — Phase 5: the ADK agent, a real internal API, and a real session-persistence bug
+
+**What:** Built `agents/` as a standalone Google ADK service and `backend/src/api/internal.py` as its data-access
+backend, then proved the whole thing end-to-end against live Vertex AI Gemini — not mocked.
+
+- `agents/src/tools.py`: all six tools from the plan's Section 12, each a plain function (ADK derives the
+  function-calling schema from the type hints + docstring) that makes an `httpx` call into one of six new
+  `backend` endpoints under `/internal/*`.
+- `backend/src/api/internal.py` + `backend/src/repositories/bigquery.py`: those six endpoints. `search-knowledge`
+  wraps Phase 4's `search_knowledge()`; the rest are small parameterized BigQuery lookups (`get_knowledge_record`,
+  `get_source_metadata`, `check_content_eligibility`, `query_health_topics`, `find_related_topics`).
+  `find_related_topics` uses the simplest defensible heuristic available — other topics sharing the same
+  `parent_category` (e.g. PCOS → Menopause, both "Hormonal Health"), falling back to any other topic if none
+  share a category — since there's no topic-relatedness data to score against yet.
+- `agents/src/agent.py`: one `LlmAgent`, model `gemini-2.5-flash` via Vertex AI, an instruction that pins it to
+  educational-only answers grounded in `search_knowledge`'s results, explicit refusal language for
+  diagnosis/treatment/medication questions, and a line telling it to trust its own session's conversation history
+  (see the memory bug below for why that line exists).
+- `agents/src/trace.py` + `agents/src/main.py`: tool-call observability (tool name, args, a small result summary,
+  latency — never the model's own reasoning text) via ADK's `before_tool_callback`/`after_tool_callback`, and a
+  FastAPI wrapper (`POST /invoke`, `GET /health`) since ADK itself doesn't ship an HTTP server meant for this use.
+- `backend/src/services/agent_client.py`: backend's HTTP client for calling `agents`. Not wired to a public route
+  yet (`POST /api/chat` is Phase 6) — Phase 5's job was proving the agent itself works, which it now demonstrably
+  does, independent of whether anything public calls it yet.
+
+**Confirmed with a real smoke test before writing anything else:** before designing any of the above, ran a
+throwaway ADK agent with one dummy tool against live Vertex AI Gemini (`gemini-2.5-flash`) and watched a real
+function-call → function-response → grounded-text-response cycle happen. Only started building the real thing
+once that worked.
+
+**Why these specific choices:**
+- **Tools call backend over HTTP; `agents/` holds no BigQuery/Vertex-AI-embeddings credentials.** This was the
+  open design question from Phase 1's service-topology decision, now actually resolved: it keeps "controlled
+  agent access" (a stated principle) concrete and checkable — the agent's only path to data is these six HTTP
+  calls, not a shared library, not direct table access.
+- **`/internal/*` auth is a shared-secret header, not the same IAM mechanism protecting `backend -> agents`.**
+  `backend` needs public Cloud Run ingress for the frontend, so there's no private-ingress IAM boundary to lean
+  on the way there is for the agents service. Considered doing real Google ID-token verification now instead, but
+  that adds a dev-vs-prod bypass-flag risk (a disabled-in-dev auth check left on by accident is a classic
+  vulnerability) for a check that's moot anyway until Phase 8 actually deploys anything to Cloud Run. Logged as an
+  explicit Phase 8 ticket rather than silently deferred.
+- **Trace isolation uses `contextvars.ContextVar`, not a closure captured at agent-construction time.** The first
+  design built a fresh `Agent` + `Runner` + `TraceRecorder` per request via closures — simple, but it turned out
+  to be the root of the memory bug below. A `ContextVar` set at the top of each request handler is visible only
+  within that request's `asyncio` Task, which is exactly the isolation a per-request trace needs without having
+  to rebuild the agent every time.
+
+**The real bug (this is the one worth remembering):** multi-turn memory didn't work on the first try — asking
+"what was the first question I asked you in this session?" got "I don't have the ability to recall past
+questions," even when reusing the same `session_id`. The actual root cause: `POST /invoke`'s first version built
+a brand-new `InMemoryRunner` (and therefore a brand-new, empty `InMemorySessionService`) on *every single
+request*. Reusing a `session_id` did nothing, because the storage that `session_id` was supposed to look up in
+had just been thrown away and recreated. Fixed by making the `Runner` a module-level singleton, built once at
+process start, with `ContextVar`-based trace isolation solving the "but I still need per-request state"
+problem the closure approach used to solve.
+
+After that fix, the *same* memory-sounding question still got refused. Before concluding the fix didn't work,
+debugged one level deeper: wrote a standalone script using the exact same persistent-Runner pattern, and printed
+the literal `contents` list going into the LLM request on the second turn. It contained the full first turn —
+user message, the tool call, the tool response, and the model's answer — verbatim. Asking the model to "repeat
+your previous answer word for word" in that same debug script worked perfectly. So the infrastructure was
+correct; the specific phrasing "did you recall/remember" triggers a reflexive "I don't retain memory across
+conversations" response in Gemini regardless of what's actually in context — a known-ish model behavior, not a
+bug in this system. Added an instruction line telling the model it does have this session's history and should
+stop disclaiming it; that reduced but didn't fully eliminate the phrasing sensitivity, which was an acceptable
+place to stop rather than keep prompt-tuning around one specific way of asking.
+
+**Deviations from the plan:** None beyond what's already logged. `find_related_topics`'s same-category heuristic
+isn't specified anywhere in the plan (there's no topic-relatedness data source to derive it from yet) — noted as
+a placeholder, not a hidden gap.
+
+**Interview notes:**
+- This is the strongest "tell me about a bug you found and how you debugged it" story in the project so far.
+  The key move was refusing to trust the symptom ("it says it can't remember") and instead checking the actual
+  request payload going to the model — which is what separated "the session logic is broken" (false) from "the
+  session logic works and the model has a phrasing-specific verbal tic" (true, and a much smaller problem).
+- Be able to explain why the fix is a `ContextVar` and not a global mutable variable or thread-local: FastAPI
+  request handlers run as concurrent `asyncio` Tasks on one thread, so a thread-local wouldn't isolate anything,
+  and a plain global would leak one request's trace into another's under any real concurrency.
+- Be honest about the `/internal/*` shared-secret auth if asked: it's not real service-to-service identity, it's
+  a placeholder scoped to this DEV demo's actual risk (no PHI, no real users), with the real fix already
+  ticketed for Phase 8 rather than hand-waved away.
+- Know the actual six tools cold and which backend endpoint each one calls — this is the part of the system most
+  likely to come up as "walk me through what happens when a user asks a question."
+
+---

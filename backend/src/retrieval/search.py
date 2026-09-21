@@ -3,10 +3,10 @@ semantic + lexical -> merge/dedupe/rerank -> governance filter -> top governed c
 
 This is IO-heavy composition (two BigQuery queries, one embedding call, one more BigQuery
 query for the governance check), so it isn't unit tested itself - hybrid.py and governance.py's
-pure logic are what's tested. This function is what Phase 5's agent tool
-(`search_knowledge(query, topic)`) will call - directly if the agent imports backend code as a
-library, or wrapped behind an HTTP endpoint if it calls into the backend service instead (see the
-open question in docs/BACKLOG.md's Phase 5 entry).
+pure logic are what's tested. This is what backend/src/api/internal.py's POST /internal/search-knowledge
+route calls, which is in turn what the agents/ service's search_knowledge tool calls over HTTP
+(see architecture.md's Service Topology: agents/ owns the tool definitions, backend owns the
+actual retrieval/BigQuery/Vertex AI code).
 """
 
 from __future__ import annotations
@@ -23,11 +23,12 @@ def search_knowledge(
     project: str,
     query: str,
     top_n: int = 5,
+    topic: str | None = None,
     semantic_weight: float = 0.6,
     lexical_weight: float = 0.4,
 ) -> list[dict]:
-    semantic_results = semantic.semantic_search(genai_client, bq_client, project, query, top_n=10)
-    lexical_results = lexical.lexical_search(bq_client, project, query, top_n=10)
+    semantic_results = semantic.semantic_search(genai_client, bq_client, project, query, top_n=10, topic=topic)
+    lexical_results = lexical.lexical_search(bq_client, project, query, top_n=10, topic=topic)
 
     # Ask for more than top_n before governance filtering shrinks the list, so a query that
     # happens to surface a couple of now-ineligible candidates doesn't starve the final result.

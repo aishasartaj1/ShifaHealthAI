@@ -25,11 +25,17 @@ def rank_by_bm25(query: str, corpus: list[dict]) -> list[dict]:
     return sorted(scored, key=lambda r: r["score"], reverse=True)
 
 
-def fetch_lexical_corpus(client: bigquery.Client, project: str) -> list[dict]:
+def fetch_lexical_corpus(client: bigquery.Client, project: str, topic: str | None = None) -> list[dict]:
     query = f"SELECT knowledge_id, topic_id, title, summary FROM `{project}.semantic.agent_eligible_knowledge`"
-    return [dict(row) for row in client.query(query).result()]
+    job_config = None
+    if topic:
+        query += " WHERE topic_id = @topic"
+        job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)])
+    return [dict(row) for row in client.query(query, job_config=job_config).result()]
 
 
-def lexical_search(client: bigquery.Client, project: str, query: str, top_n: int = 10) -> list[dict]:
-    corpus = fetch_lexical_corpus(client, project)
+def lexical_search(
+    client: bigquery.Client, project: str, query: str, top_n: int = 10, topic: str | None = None
+) -> list[dict]:
+    corpus = fetch_lexical_corpus(client, project, topic=topic)
     return rank_by_bm25(query, corpus)[:top_n]

@@ -81,12 +81,14 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Tests: 22 backend tests (`test_hybrid.py`, `test_governance.py`, `test_semantic_retrieval.py`, `test_lexical_retrieval.py`) — merge/rerank weighting and top-n behavior, governance filter keeps-only-eligible/preserves-order/empty-set cases, cosine edge cases, BM25 exact-term-match
 - [x] **Live drift test**: deleted `know_pcos_002` from `semantic.agent_eligible_knowledge` only (leaving its embedding in place — simulating eligibility changing after the index was built). Confirmed `semantic_search()` alone still returned it as the #1 match (0.839), but `search_knowledge()`'s governance re-check correctly dropped it from the final results. Restored via a batch-pipeline re-run
 
-### Phase 5 — Agent
-- [ ] `agents/`: standalone Google ADK application (own `pyproject.toml`/requirements, own Dockerfile) — single Gemini orchestrating agent
-- [ ] `agents/tools.py` (or ADK-idiomatic equivalent): `search_knowledge`, `get_knowledge_record`, `get_source_metadata`, `check_content_eligibility`, `query_health_topics`, `find_related_topics` — these call into `backend`'s retrieval/BigQuery code, so decide: agent calls backend's internal HTTP API, or agent imports a shared retrieval package directly
-- [ ] Agent trace capture: intent, topic, candidate counts, tools called, timing — no raw chain-of-thought (ADK's built-in tracing may cover most of this)
-- [ ] `backend/src/services/agent_client.py`: backend's HTTP client for calling the private `agents` Cloud Run service (Phase 1–8 local dev equivalent: call `agents` on localhost)
-- [ ] Tests: each tool's contract (input/output shape, governance enforcement), orchestrator intent routing (RAG vs. structured), backend↔agents client contract
+### Phase 5 — Agent — **done** (2026-09-21)
+- [x] `agents/`: standalone Google ADK application, one `LlmAgent` (Gemini via Vertex AI). Dockerfile deferred to Phase 8 alongside backend's and frontend's (containerization grouped together, not piecemeal)
+- [x] `agents/src/tools.py`: all 6 tools, each a thin `httpx` call into `backend`'s new `/internal/*` API (`backend/src/api/internal.py`) — **decided:** agent calls backend over HTTP, backend owns all BigQuery/Vertex AI retrieval code, agents/ holds no data-access credentials of its own (see architecture.md's Service Topology)
+- [x] `backend/src/api/internal.py` + `backend/src/repositories/bigquery.py`: the 6 tools' backing endpoints (`search-knowledge`, `knowledge/{id}`, `sources/{id}`, `knowledge/{id}/eligibility`, `topics`, `topics/{id}/related`). Auth is a shared-secret header (`X-Internal-Api-Key`) — a deliberate DEV stand-in for real Cloud Run IAM ID-token verification, since backend needs public ingress for the frontend and can't rely on private-ingress IAM the way `backend -> agents` can. Phase 8 should replace this
+- [x] Agent trace capture (`agents/src/trace.py`): tool name, args, result summary (counts only, never raw content), latency — wired via ADK's `before_tool_callback`/`after_tool_callback`, isolated per-request with a `contextvars.ContextVar`
+- [x] `backend/src/services/agent_client.py`: backend's HTTP client for calling `agents`, tested with mocked HTTP and proven against a live `agents` instance. Not wired to a public route yet — that's Phase 6's `POST /api/chat`
+- [x] Tests: 16 new `agents/` tests (mocked-HTTP tool contracts, pure trace-logic), 8 new `backend/` tests (internal API auth + routes, agent_client contract) — 46 tests total across both services, all hermetic (no live GCP calls)
+- [x] **Real end-to-end verification** (not mocked): ran backend + agents together, called `/invoke` directly and via `AgentClient`, for real, against live Vertex AI Gemini + BigQuery. Confirmed: correct grounded, cited answers (matches the plan's own PCOS example); the diagnosis/treatment refusal guardrail triggers with zero tool calls; multi-turn session memory. Found and fixed a real bug in the process — recreating the ADK `Runner` per-request silently wiped session history every time; fixed with a module-level singleton `Runner` + `ContextVar`-based per-request trace isolation
 
 ### Phase 6 — Application
 - [ ] `POST /api/chat`, `GET /api/topics`, `GET /api/knowledge/{id}`, `GET /api/sources/{id}` endpoints
@@ -106,8 +108,10 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [ ] Terraform `cloud_run` module, instantiated twice: `backend` (public ingress) and `agents` (private/internal ingress, no public access)
 - [ ] Terraform `iam` module: dedicated service account per Cloud Run service; grant `backend`'s SA `roles/run.invoker` on the `agents` service specifically (not project-wide) — the enforced trust boundary from architecture.md's "Service topology"
 - [ ] Terraform `artifact_registry` module: repository for both container images
-- [ ] Secret Manager wiring for runtime config/secrets (no secrets in Git, ever)
+- [ ] Secret Manager wiring for runtime config/secrets (no secrets in Git, ever), including `internal_api_key`
+- [ ] Replace `backend`'s `/internal/*` shared-secret auth (Phase 5's DEV stand-in) with real caller verification — either a Google-issued ID token check (`google.oauth2.id_token.verify_oauth2_token`) confirming the caller is `agents`' service account, or move `/internal/*` behind its own private-ingress boundary
 - [ ] Terraform `observability` module: Cloud Logging/Monitoring baseline for both services
+- [ ] Dockerfiles for `backend/`, `agents/`, and `frontend/` (grouped here rather than written piecemeal per phase)
 - [ ] `functions/`: one Cloud Function (raw-bucket file-arrival → ingestion-request event)
 
 ### Phase 9 — CI/CD
@@ -155,7 +159,8 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 5 (Agent): decide the ADK agent's tool-to-retrieval boundary (agent calls `backend`'s retrieval code
-via internal HTTP, per architecture.md's Service Topology, vs. importing it as a shared library — see the open
-question logged when Phase 5's tickets were written), then build `agents/` as a standalone ADK app with the six
-tools wired to `backend/src/retrieval/search.py`'s `search_knowledge()` and the BigQuery lookups.
+Start Phase 6 (Application): wire `backend/src/services/agent_client.py` behind a real `POST /api/chat`, add
+`GET /api/topics`, `GET /api/knowledge/{id}`, `GET /api/sources/{id}`, and build the frontend's `Assistant.tsx`
+(question input, grounded answer, source cards, related topics, disclaimer), `Topics.tsx`, and an admin console
+shell (`AdminOverview.tsx`, `AgentObservability.tsx`, `Governance.tsx`) backed by `GET /api/admin/quality`,
+`/admin/agents`, `/admin/agents/{trace_id}`.

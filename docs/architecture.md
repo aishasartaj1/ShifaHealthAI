@@ -68,6 +68,27 @@ Vertex AI Gemini + retrieval/governance tools
   one more IAM binding, one more Docker image to build in CI — accepted because it's a concrete, explainable
   responsibility split, not scope-creep for its own sake.
 
+### The two HTTP relationships between backend and agents
+
+There are two, in opposite directions, for two different reasons:
+
+1. **`backend -> agents`**, for the chat flow: `backend/src/services/agent_client.py` calls `agents`' `POST
+   /invoke` to run the Gemini agent for a user message. This is the one the IAM `roles/run.invoker` binding above
+   actually protects, once deployed to Cloud Run's private ingress.
+2. **`agents -> backend`**, for the agent's tools: each of the six tools (`agents/src/tools.py`) is a plain HTTP
+   call into `backend`'s `/internal/*` API (`backend/src/api/internal.py`), which wraps
+   `backend/src/repositories/bigquery.py` and `backend/src/retrieval/search.py`. `agents/` holds no BigQuery or
+   Vertex-AI-embeddings credentials of its own — every retrieval/lookup call it makes is really backend doing the
+   work on its behalf. This is what "Controlled agent access" (the principles table above) means concretely: the
+   agent's only path to data is through these six HTTP calls, not a raw table or a shared library import.
+
+   `/internal/*`'s auth is a shared-secret header (`X-Internal-Api-Key`), **not** the same IAM mechanism as (1).
+   `backend` needs public Cloud Run ingress for the frontend, so there's no private-ingress IAM boundary to lean
+   on the way there is for `agents`. This is a deliberate DEV-appropriate simplification, not a production
+   pattern — see the Phase 5 entry in [DEVLOG.md](DEVLOG.md) and the Phase 8 ticket in [BACKLOG.md](BACKLOG.md)
+   for what would replace it (verifying the caller's Google-issued ID token, or moving `/internal/*` behind its
+   own private-ingress boundary).
+
 ## End-to-end question flow
 
 1. React → `POST /api/chat`
@@ -133,3 +154,7 @@ Record deviations from the source plan here as they happen, with rationale and d
   Google ADK, deployed as its own private Cloud Run service rather than living inside the FastAPI process. See
   "Service topology" above for the resulting shape and rationale. Deviates from the plan's single-Cloud-Run-box
   diagram; kept BigQuery-as-governance-authority and controlled-tool-access principles unchanged.
+- _2026-09-21_ (Phase 5) — Built `agents/`'s six tools as HTTP calls into a new `backend/src/api/internal.py`,
+  confirming the "agent calls backend via HTTP" side of the split decided above. Auth on that internal API is a
+  shared-secret header, a known-temporary simplification (see "The two HTTP relationships" above) — flagged as a
+  Phase 8 follow-up, not silently left unresolved.

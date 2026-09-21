@@ -38,14 +38,23 @@ def embed_query(client: genai.Client, query: str) -> list[float]:
     return response.embeddings[0].values
 
 
-def fetch_embedding_corpus(client: bigquery.Client, project: str) -> list[dict]:
+def fetch_embedding_corpus(client: bigquery.Client, project: str, topic: str | None = None) -> list[dict]:
     query = f"SELECT knowledge_id, topic_id, title, summary, embedding FROM `{project}.semantic.knowledge_embeddings`"
-    return [dict(row) for row in client.query(query).result()]
+    job_config = None
+    if topic:
+        query += " WHERE topic_id = @topic"
+        job_config = bigquery.QueryJobConfig(query_parameters=[bigquery.ScalarQueryParameter("topic", "STRING", topic)])
+    return [dict(row) for row in client.query(query, job_config=job_config).result()]
 
 
 def semantic_search(
-    genai_client: genai.Client, bq_client: bigquery.Client, project: str, query: str, top_n: int = 10
+    genai_client: genai.Client,
+    bq_client: bigquery.Client,
+    project: str,
+    query: str,
+    top_n: int = 10,
+    topic: str | None = None,
 ) -> list[dict]:
-    corpus = fetch_embedding_corpus(bq_client, project)
+    corpus = fetch_embedding_corpus(bq_client, project, topic=topic)
     query_embedding = embed_query(genai_client, query)
     return rank_by_similarity(query_embedding, corpus)[:top_n]

@@ -63,6 +63,7 @@ ShifaHealthAI/
 - [Hybrid RAG design](docs/rag-design.md)
 - [Demo script](docs/demo-script.md)
 - [Implementation backlog](docs/BACKLOG.md)
+- [Development log](docs/DEVLOG.md) — chronological build journal: choices, deviations, interview notes
 
 ## Scope
 

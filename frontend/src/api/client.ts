@@ -1,6 +1,8 @@
 import type {
   AgentTraceSummary,
+  AnalyticsSummary,
   ChatResponse,
+  ClientEventType,
   KnowledgeSummary,
   QualitySummary,
   Topic,
@@ -47,4 +49,37 @@ export async function getRecentAgentTraces(limit = 20): Promise<AgentTraceSummar
 
 export async function getAgentTrace(traceId: string): Promise<AgentTraceSummary> {
   return request(`/api/admin/agents/${encodeURIComponent(traceId)}`);
+}
+
+export async function getAnalyticsSummary(): Promise<AnalyticsSummary> {
+  return request("/api/admin/analytics");
+}
+
+interface PostEventParams {
+  eventType: ClientEventType;
+  sessionId: string;
+  traceId?: string;
+  topicId?: string;
+  knowledgeId?: string;
+  rating?: "up" | "down";
+}
+
+/** Fire-and-forget: interaction telemetry should never block the UI or surface an error to the
+ * user if it fails - it's failed the same way analytics beacons everywhere fail silently. */
+export function postEvent(params: PostEventParams): void {
+  fetch(`${API_BASE_URL}/api/events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    keepalive: true,
+    body: JSON.stringify({
+      event_type: params.eventType,
+      session_id: params.sessionId,
+      trace_id: params.traceId ?? null,
+      topic_id: params.topicId ?? null,
+      knowledge_id: params.knowledgeId ?? null,
+      rating: params.rating ?? null,
+    }),
+  }).catch((err) => {
+    console.warn("Failed to record interaction event", err);
+  });
 }

@@ -1,0 +1,12 @@
+[
+  { "name": "event_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "event_type", "type": "STRING", "mode": "REQUIRED", "description": "QUESTION_ASKED / RESPONSE_GENERATED / SOURCE_OPENED / RELATED_TOPIC_OPENED / FEEDBACK_SUBMITTED." },
+  { "name": "session_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "trace_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "topic_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "knowledge_id", "type": "STRING", "mode": "NULLABLE" },
+  { "name": "rating", "type": "STRING", "mode": "NULLABLE", "description": "up / down, for FEEDBACK_SUBMITTED only." },
+  { "name": "latency_ms", "type": "FLOAT64", "mode": "NULLABLE", "description": "RESPONSE_GENERATED only." },
+  { "name": "source_count", "type": "INTEGER", "mode": "NULLABLE", "description": "RESPONSE_GENERATED only." },
+  { "name": "occurred_at", "type": "TIMESTAMP", "mode": "REQUIRED" }
+]

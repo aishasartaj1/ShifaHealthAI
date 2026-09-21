@@ -1,11 +1,14 @@
 """POST /api/chat - the public entrypoint for the Women's Health Assistant (plan Section 13's
 end-to-end question flow, steps 1-13). Calls the private agents/ service via AgentClient, then
 builds source cards + related topics from the agent's trace so the frontend has structured data
-to render, not just prose with inline citations.
+to render, not just prose with inline citations. Also publishes QUESTION_ASKED and
+RESPONSE_GENERATED interaction events (Section 7.3) - server-side, since this handler is the one
+place that actually knows both of those things genuinely happened.
 """
 
 from __future__ import annotations
 
+import time
 import uuid
 
 from fastapi import APIRouter
@@ -13,7 +16,9 @@ from fastapi import APIRouter
 from src.config import get_settings
 from src.repositories import bigquery as repo
 from src.schemas.chat import ChatRequest, ChatResponse, RelatedTopic, SourceCard
+from src.schemas.events import build_event
 from src.services.agent_client import AgentClient
+from src.services.pubsub import publish_event
 from src.services.trace_store import record_trace
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -40,8 +45,12 @@ def extract_candidate_knowledge_ids(trace: dict) -> list[str]:
 def chat(body: ChatRequest) -> ChatResponse:
     settings = get_settings()
     bq_client = repo.get_bigquery_client()
+    session_id = body.session_id or body.user_id
 
-    agent_result = AgentClient().invoke(body.message, user_id=body.user_id, session_id=body.session_id)
+    publish_event(build_event(event_type="QUESTION_ASKED", session_id=session_id))
+
+    started_at = time.monotonic()
+    agent_result = AgentClient().invoke(body.message, user_id=body.user_id, session_id=session_id)
     agent_trace = agent_result.get("trace", {})
     candidate_ids = extract_candidate_knowledge_ids(agent_trace)[:MAX_SOURCES]
 
@@ -75,6 +84,8 @@ def chat(body: ChatRequest) -> ChatResponse:
             seen_topic_ids.add(related["topic_id"])
             related_topics.append(RelatedTopic(topic_id=related["topic_id"], topic_name=related["topic_name"]))
 
+    total_latency_ms = round((time.monotonic() - started_at) * 1000, 1)
+
     trace_id = str(uuid.uuid4())
     record_trace(
         trace_id,
@@ -85,6 +96,16 @@ def chat(body: ChatRequest) -> ChatResponse:
             "total_latency_ms": agent_trace.get("total_latency_ms"),
             "candidate_knowledge_ids": candidate_ids,
         },
+    )
+
+    publish_event(
+        build_event(
+            event_type="RESPONSE_GENERATED",
+            session_id=session_id,
+            trace_id=trace_id,
+            latency_ms=total_latency_ms,
+            source_count=len(sources),
+        )
     )
 
     return ChatResponse(

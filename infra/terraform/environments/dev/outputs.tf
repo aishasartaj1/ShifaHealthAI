@@ -29,3 +29,11 @@ output "storage_buckets" {
     quarantine = module.storage.quarantine_bucket
   }
 }
+
+output "pubsub" {
+  description = "Pub/Sub topic and subscription for interaction events (Phase 7)."
+  value = {
+    topic                  = module.pubsub.topic_name
+    streaming_subscription = module.pubsub.streaming_subscription_name
+  }
+}

@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { postChat } from "../api/client";
+import { Link } from "react-router-dom";
+import { postChat, postEvent } from "../api/client";
 import type { ChatResponse } from "../types/api";
 
 interface Turn {
   question: string;
   response?: ChatResponse;
   error?: string;
+  feedback?: "up" | "down";
 }
 
 export default function Assistant() {
@@ -32,6 +34,19 @@ export default function Assistant() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleSourceClick(knowledgeId: string, traceId: string) {
+    postEvent({ eventType: "SOURCE_OPENED", sessionId, traceId, knowledgeId });
+  }
+
+  function handleRelatedTopicClick(topicId: string, traceId: string) {
+    postEvent({ eventType: "RELATED_TOPIC_OPENED", sessionId, traceId, topicId });
+  }
+
+  function handleFeedback(turnIndex: number, traceId: string, rating: "up" | "down") {
+    postEvent({ eventType: "FEEDBACK_SUBMITTED", sessionId, traceId, rating });
+    setTurns((prev) => prev.map((t, i) => (i === turnIndex ? { ...t, feedback: rating } : t)));
   }
 
   return (
@@ -63,6 +78,7 @@ export default function Assistant() {
                         href={source.source_url}
                         target="_blank"
                         rel="noreferrer"
+                        onClick={() => handleSourceClick(source.knowledge_id, turn.response!.trace_id)}
                       >
                         <strong>{source.title}</strong>
                         <span>
@@ -77,12 +93,38 @@ export default function Assistant() {
                   <div className="related-topics">
                     <h3>Related topics</h3>
                     {turn.response.related_topics.map((topic) => (
-                      <span key={topic.topic_id} className="topic-chip">
+                      <Link
+                        key={topic.topic_id}
+                        to={`/topics?topic=${encodeURIComponent(topic.topic_id)}`}
+                        className="topic-chip"
+                        onClick={() => handleRelatedTopicClick(topic.topic_id, turn.response!.trace_id)}
+                      >
                         {topic.topic_name}
-                      </span>
+                      </Link>
                     ))}
                   </div>
                 )}
+
+                <div className="feedback-row">
+                  <span>Was this helpful?</span>
+                  <button
+                    type="button"
+                    className={`feedback-button ${turn.feedback === "up" ? "active" : ""}`}
+                    disabled={!!turn.feedback}
+                    onClick={() => handleFeedback(i, turn.response!.trace_id, "up")}
+                  >
+                    👍
+                  </button>
+                  <button
+                    type="button"
+                    className={`feedback-button ${turn.feedback === "down" ? "active" : ""}`}
+                    disabled={!!turn.feedback}
+                    onClick={() => handleFeedback(i, turn.response!.trace_id, "down")}
+                  >
+                    👎
+                  </button>
+                  {turn.feedback && <span className="feedback-thanks">Thanks for the feedback!</span>}
+                </div>
 
                 <p className="disclaimer">{turn.response.disclaimer}</p>
               </div>

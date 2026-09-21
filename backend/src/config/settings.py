@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     # in a real deployment, the agents Cloud Run service's private URL.
     agent_service_base_url: str = "http://localhost:8001"
 
+    # Pub/Sub topic interaction events are published to (src/services/pubsub.py), matching
+    # infra/terraform/modules/pubsub's google_pubsub_topic name.
+    pubsub_topic: str = "shifahealth-events"
+
 
 @lru_cache
 def get_settings() -> Settings:

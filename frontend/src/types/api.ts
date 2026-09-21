@@ -82,3 +82,18 @@ export interface AgentTraceSummary {
   total_latency_ms: number;
   candidate_knowledge_ids: string[];
 }
+
+// Matches backend/src/schemas/events.py's client-fireable event types - QUESTION_ASKED and
+// RESPONSE_GENERATED are published server-side by chat.py, never from the browser.
+export type ClientEventType = "SOURCE_OPENED" | "RELATED_TOPIC_OPENED" | "FEEDBACK_SUBMITTED";
+
+export interface TopicAnalytics {
+  topic_id: string;
+  [metric: string]: number | string;
+}
+
+export interface AnalyticsSummary {
+  global: Record<string, number>;
+  by_topic: TopicAnalytics[];
+  computed_at: string | null;
+}

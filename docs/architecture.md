@@ -164,5 +164,17 @@ Record deviations from the source plan here as they happen, with rationale and d
   counts, not just counts — `POST /api/chat` needs the actual IDs to build source cards, and an ID is a
   structured reference, not raw content, so this doesn't compromise "no raw chain-of-thought." `GET
   /api/admin/agents`/`{trace_id}` reads from a bounded, process-local, in-memory store
-  (`backend/src/services/trace_store.py`), a deliberate stand-in until Phase 7's Pub/Sub → Dataflow → BigQuery
-  pipeline gives traces real durable, cross-instance storage.
+  (`backend/src/services/trace_store.py`) — see the Phase 7 entry below for why this stays in-memory rather
+  than being folded into that phase's streaming work.
+- _2026-09-21_ (Phase 7) — `QUESTION_ASKED`/`RESPONSE_GENERATED` are published server-side by
+  `backend/src/api/chat.py`; `SOURCE_OPENED`/`RELATED_TOPIC_OPENED`/`FEEDBACK_SUBMITTED` are published by a new
+  `POST /api/events` on the frontend's behalf — a deliberate split, not an oversight: only `chat.py` reliably
+  knows the first two genuinely happened, so accepting them from the client would let one be fabricated.
+  `pipelines/streaming/` quarantines invalid events into a BigQuery table (`curated.quarantined_events`), not a
+  GCS file the way batch's pipeline does — an unbounded Pub/Sub-sourced streaming pipeline needs
+  window/trigger finalization to ever flush a file sink, which is real added complexity for no benefit at this
+  event volume; a streaming insert needs none of that. `semantic.question_analytics` is populated by a small
+  re-runnable script (`scripts/refresh_analytics.py`), not continuous Beam-windowed aggregation, for the same
+  "simplest defensible option at this scale" reasoning used throughout this project. Note this phase did **not**
+  migrate `backend/src/services/trace_store.py` (agent traces) to durable storage — it built durable storage for
+  *interaction events* only; agent-trace persistence is a separate, still-open concern if it's ever needed.

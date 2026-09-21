@@ -1,0 +1,5 @@
+[
+  { "name": "reason", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "raw_payload", "type": "STRING", "mode": "REQUIRED", "description": "The original event, JSON-serialized as-is. Unlike the batch pipeline's GCS-file quarantine, an unbounded Pub/Sub source quarantines into BigQuery instead - a streaming file sink needs windowing/triggers to ever finalize a shard, which adds real complexity for no benefit at this event volume; a streaming insert needs none of that." },
+  { "name": "quarantined_at", "type": "TIMESTAMP", "mode": "REQUIRED" }
+]

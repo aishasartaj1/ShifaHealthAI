@@ -3,8 +3,8 @@
 #
 # curated.* and semantic.* table schemas were added in Phase 3, once pipelines/batch/pipeline.py
 # (the Dataflow/Beam job that populates them) existed to derive them from — not guessed ahead of
-# that logic in Phase 2. fact_user_question and semantic.question_analytics are NOT defined here:
-# they're populated by streaming events (Phase 7), not this batch job, and don't exist yet.
+# that logic in Phase 2. fact_user_question and question_analytics were added in Phase 7 once
+# pipelines/streaming/ and scripts/refresh_analytics.py existed to populate them.
 #
 # Terraform owns schema (CREATE_NEVER in the pipeline's BigQuery writes); the batch pipeline owns
 # data (WRITE_TRUNCATE — it recomputes curated/semantic fully on every run).
@@ -20,14 +20,14 @@ resource "google_bigquery_dataset" "curated" {
   project     = var.project_id
   dataset_id  = "curated"
   location    = var.location
-  description = "Curated dimensional layer (dim_health_topic, dim_source, dim_knowledge, fact_medical_review, fact_user_question). Populated starting Phase 3."
+  description = "Curated dimensional layer: dim_health_topic, dim_source, dim_knowledge, fact_medical_review (Phase 3), fact_user_question (Phase 7)."
 }
 
 resource "google_bigquery_dataset" "semantic" {
   project     = var.project_id
   dataset_id  = "semantic"
   location    = var.location
-  description = "Semantic / AI-ready layer — the governance authority and the only layer the API/agent read from. Populated starting Phase 3."
+  description = "Semantic / AI-ready layer — the governance authority and the only layer the API/agent read from."
 }
 
 resource "google_bigquery_table" "raw_topics" {
@@ -132,4 +132,28 @@ resource "google_bigquery_table" "knowledge_embeddings" {
   table_id            = "knowledge_embeddings"
   deletion_protection = false
   schema              = file("${path.module}/schemas/semantic_knowledge_embeddings.json")
+}
+
+resource "google_bigquery_table" "fact_user_question" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.curated.dataset_id
+  table_id            = "fact_user_question"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/curated_fact_user_question.json")
+}
+
+resource "google_bigquery_table" "question_analytics" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.semantic.dataset_id
+  table_id            = "question_analytics"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/semantic_question_analytics.json")
+}
+
+resource "google_bigquery_table" "quarantined_events" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.curated.dataset_id
+  table_id            = "quarantined_events"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/curated_quarantined_events.json")
 }

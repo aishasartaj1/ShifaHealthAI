@@ -510,3 +510,108 @@ not a scope expansion beyond what Section 20 already asks the page to do.
   specifies, rather than inventing more endpoints than were asked for.
 
 ---
+
+## 2026-09-21 — Phase 7: real streaming events, a runner bug, and a scary hang that wasn't the code
+
+**What:** Built the full interaction-event pipeline. `backend/src/schemas/events.py` (the 5 event types, and a
+`build_event()` that deliberately has no free-text field anywhere), `backend/src/services/pubsub.py`
+(best-effort publish, never blocks or raises into the caller), `backend/src/api/events.py` (`POST /api/events`
+for the 3 client-fireable event types), and `backend/src/api/chat.py` updated to publish `QUESTION_ASKED` /
+`RESPONSE_GENERATED` itself. `infra/terraform/modules/pubsub` (one topic, one pull subscription) plus 3 new
+BigQuery tables (`curated.fact_user_question`, `curated.quarantined_events`, `semantic.question_analytics`).
+`pipelines/streaming/` (`transforms.py` pure validation + `pipeline.py` Beam DAG + `run.py` CLI).
+`scripts/refresh_analytics.py`. Frontend: `postEvent()` fire-and-forget helper, source-card clicks, a real
+👍/👎 feedback control, and related-topic chips that now deep-link to `/topics?topic=<id>`.
+`AdminOverview.tsx` gained an "Interaction analytics" section.
+
+**Why no question/answer text anywhere:** the plan's Section 16 is explicit — "avoid collecting sensitive or
+identifying health information... anonymous operational telemetry." So `build_event()`'s signature has no
+`question_text` parameter at all, not a parameter that's usually empty. `pipelines/streaming/transforms.py`'s
+`normalize_event()` reinforces this at the pipeline level too: it only ever copies the fixed `OUTPUT_FIELDS` list
+into the row it writes, so even if some future caller *did* smuggle a stray field onto an event, the pipeline
+would silently drop it rather than writing it to the warehouse — tested explicitly
+(`test_normalize_event_drops_unexpected_fields`).
+
+**Server-side vs. client-side event publishing, and why the split isn't arbitrary:** `chat.py` publishes
+`QUESTION_ASKED`/`RESPONSE_GENERATED` itself because it's the only place that actually knows, with certainty,
+that a question was asked and a response was generated. `POST /api/events` explicitly rejects those two event
+types from a client (422, tested) — accepting them would let a browser fabricate analytics events that never
+corresponded to a real backend call. The 3 it does accept (`SOURCE_OPENED`, `RELATED_TOPIC_OPENED`,
+`FEEDBACK_SUBMITTED`) are genuinely client-side actions the backend has no other way to observe.
+
+**Quarantine goes to BigQuery here, not GCS like batch's does — a real, reasoned deviation, not an
+inconsistency:** batch's quarantine (Phase 3) writes JSON-lines files because its pipeline is bounded — it runs
+once, processes everything, and finishes, so a file sink naturally flushes at the end. This pipeline reads an
+*unbounded* Pub/Sub source; a streaming file sink only flushes on window/trigger boundaries, which means either
+adding real windowing complexity or accepting that quarantine data might not appear for a long time (or ever, in
+a short demo run). A BigQuery streaming insert needs no windowing at all and shows up immediately — so
+`curated.quarantined_events` is a table, and the schema's own description explains why, so a future reader
+doesn't mistake the difference for an accident.
+
+**`semantic.question_analytics` is a periodic script, not streaming aggregation — same call as `build_index.py`
+(Phase 4) and consciously so:** a genuinely continuous Beam windowed-aggregation pipeline was considered and
+rejected. At this event volume, `scripts/refresh_analytics.py` re-deriving the whole metrics table from
+`curated.fact_user_question` in one query, re-runnable after any batch of new events, is simpler, easier to
+reason about, and just as correct. This is the fourth time this exact "simplest defensible option, not the
+maximal one" judgment call shows up in this project (BigQuery-as-vector-store, DirectRunner-over-Dataflow,
+BigQuery-quarantine-over-GCS-for-streaming, and now this) — worth having a crisp answer ready for "why didn't
+you just use [the fancier thing]" in an interview, because the honest answer is the same shape every time: the
+fancier option's actual benefit doesn't show up until a scale this project isn't at.
+
+**Two real bugs, both found by actually running the thing, not by reading the code:**
+
+1. **Beam's default local runner ("Prism") doesn't support `ReadFromPubSub`.** First attempt at running the
+   streaming pipeline failed immediately with `unsupported feature "PTransform.Spec.Urn" ... beam:transform:pubsub_read:v1`.
+   Investigated by reading `apache_beam`'s own `StandardOptions`/`direct_runner.py` source: there's a
+   `SwitchingDirectRunner` that's *supposed* to detect `ReadFromPubSub`/`WriteToPubSub` usage and fall back to
+   `BundleBasedDirectRunner` (which does support streaming) instead of the FnApi/Prism runner — but in Beam
+   2.76, plain `--runner=DirectRunner` no longer routes through that switch by default. Fixed by passing
+   `--runner=BundleBasedDirectRunner` explicitly. Filed away as exactly the kind of "the docs describe the old
+   default" trap that shows up when a fast-moving library changes its defaults between versions.
+2. **A live `POST /api/chat` request hung for 90+ seconds** the first time it ran with the new Pub/Sub
+   publishing code in place — no error, just silence. Debugged by elimination rather than by guessing: tested
+   `google-cloud-pubsub` publishing alone in isolation (fine, ~5s cold client construction + ~1s publish), tested
+   `AgentClient().invoke()` alone (fine, ~18s, normal), tested the exact same publish-then-invoke sequence in a
+   plain script outside FastAPI entirely (fine, ~23s total) — which meant the bug wasn't in any of the code, only
+   in *that specific running process*. Restarted the backend cleanly and the identical request completed in 48s.
+   Root cause was never fully pinned down (most likely: that process's first Pub/Sub client construction
+   happened to coincide with heavy concurrent load from also running the streaming pipeline and several other
+   Python processes at once during testing) but the diagnostic method is the reusable lesson: when something
+   hangs, test each suspected component in isolation before assuming the newest code is guilty, and don't rule
+   out "this specific process is just in a bad state" as a real category of bug, separate from "the code is
+   wrong."
+
+**Verified for real, end to end:** ran the actual Beam pipeline against the live subscription while firing real
+chat requests and interaction events from `curl`; confirmed every event type landed in
+`curated.fact_user_question` with exactly the right structured fields (`SOURCE_OPENED` with `knowledge_id`,
+`RELATED_TOPIC_OPENED` with `topic_id`, `FEEDBACK_SUBMITTED` with `rating`) and zero question/answer text
+anywhere. Published two deliberately malformed messages directly to the Pub/Sub topic (bypassing the backend's
+own validation entirely) and confirmed both landed in `curated.quarantined_events` with accurate reasons
+(`"missing required fields: [...]"`, `"invalid event_type 'NOT_A_REAL_TYPE'"`). Ran `refresh_analytics.py` and
+confirmed `GET /api/admin/analytics` returned the exact aggregated counts. Then a full Playwright pass: asked a
+real question, clicked a source card (fired `SOURCE_OPENED`), gave 👍 feedback (fired `FEEDBACK_SUBMITTED`),
+clicked a related-topic chip and confirmed it actually navigated to `/topics?topic=menopause` and rendered that
+topic's 6 knowledge cards, then loaded `/admin` and confirmed the 5-tile analytics section rendered with live
+numbers. Zero browser console errors throughout.
+
+**Deviations from the plan:** Related-topic chips deep-linking to `/topics?topic=<id>` and the 👍/👎 feedback
+control weren't explicitly ticketed — added because `FEEDBACK_SUBMITTED` needed *something* in the UI to
+actually fire it, and a related-topic chip that doesn't do anything on click isn't really "related topic
+presentation" per Section 12's tool table. Both are small, directly justified by making already-planned features
+actually functional, not scope creep.
+
+**Interview notes:**
+- Be ready to explain the server-published vs. client-published event split as a trust boundary, the same
+  framing as the `/internal/*` auth discussion in Phase 5 — "which side can I trust to tell the truth about this
+  event actually happening?"
+- The Prism/PubSub runner bug is a good demonstration of reading a library's own source to resolve a confusing
+  error, rather than trial-and-error flag-guessing — the fix (`BundleBasedDirectRunner`) came directly from
+  reading `SwitchingDirectRunner`'s docstring and implementation.
+- The hung-request bug is the best "debugging under uncertainty" story in this project so far: the instinct to
+  isolate each component before blaming the newest code is the transferable skill, more than the specific root
+  cause (which was never fully confirmed).
+- Know the four-times-repeated "simplest defensible option" pattern across this project by name and be ready to
+  give the real reasoning each time, not just "it was simpler" — a reviewer who pushes on any one of them should
+  get a specific, scale-aware answer, not a shrug.
+
+---

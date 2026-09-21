@@ -236,13 +236,46 @@ related topics from the agent's trace (not by parsing citations out of its prose
 actual `knowledge_id`s a `search_knowledge` call surfaced, not just a count).
 
 Agent traces are held in an in-memory store (`backend/src/services/trace_store.py`) — bounded, process-local,
-lost on restart. Durable, cross-instance trace persistence is Phase 7's job (Pub/Sub → Dataflow → BigQuery), not
-duplicated here.
+lost on restart. That's deliberately unchanged by Phase 7 below: Phase 7 built durable storage for *interaction*
+events, not agent traces, which are a different, narrower concern the plan doesn't ask to be streamed.
 
 ```bash
-cd backend && .venv/Scripts/pytest tests/ -q   # 51 tests, all hermetic
+cd backend && .venv/Scripts/pytest tests/ -q   # 58 tests, all hermetic
 cd frontend && npm run build                   # type-check + production bundle
 ```
+
+### Streaming (Phase 7)
+
+```bash
+# terminal 4 - streaming pipeline (bounded run for DEV; a real Dataflow job runs indefinitely)
+cd pipelines/streaming
+python -m venv .venv
+.venv/Scripts/activate
+pip install -r requirements-dev.txt
+pytest tests/ -q   # pure validation-logic tests, no GCP calls
+python run.py --project shifahealthai --subscription shifahealth-events-streaming-sub \
+  --runner BundleBasedDirectRunner --run-for-seconds 90
+```
+
+Use `--runner BundleBasedDirectRunner` explicitly for local runs — Beam 2.76's default local runner ("Prism")
+doesn't yet support `ReadFromPubSub`; `BundleBasedDirectRunner` is the one that does (see
+[docs/DEVLOG.md](docs/DEVLOG.md) for how this was diagnosed).
+
+Reads `shifahealth-events-streaming-sub`, validates each event, writes valid ones to
+`curated.fact_user_question` and invalid ones to `curated.quarantined_events` (both via streaming insert — no
+GCS quarantine file here, unlike batch; see that table's schema comment for why). Events are published by:
+- `backend/src/api/chat.py`, server-side, for `QUESTION_ASKED`/`RESPONSE_GENERATED` (no user-fireable equivalent)
+- `POST /api/events`, called by the frontend, for `SOURCE_OPENED`/`RELATED_TOPIC_OPENED`/`FEEDBACK_SUBMITTED`
+
+No question or answer text is ever captured in these events — see `backend/src/schemas/events.py`'s docstring.
+
+```bash
+python scripts/refresh_analytics.py --project shifahealthai
+```
+
+Aggregates `curated.fact_user_question` into `semantic.question_analytics` (global + per-topic metrics). A
+small re-runnable script, not continuous streaming aggregation — re-run it after any batch of new events lands.
+`GET /api/admin/analytics` serves the result; `AdminOverview.tsx`'s "Interaction analytics" section renders it.
 
 ## Live demo
 

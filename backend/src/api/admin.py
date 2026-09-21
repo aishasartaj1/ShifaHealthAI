@@ -28,3 +28,9 @@ def get_agent_trace(trace_id: str) -> dict:
     if trace is None:
         raise HTTPException(status_code=404, detail=f"Unknown trace_id '{trace_id}'")
     return trace
+
+
+@router.get("/analytics")
+def analytics() -> dict:
+    settings = get_settings()
+    return repo.get_analytics_summary(repo.get_bigquery_client(), settings.gcp_project_id)

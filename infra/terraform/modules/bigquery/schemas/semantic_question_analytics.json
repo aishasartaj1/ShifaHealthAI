@@ -1,0 +1,6 @@
+[
+  { "name": "metric_name", "type": "STRING", "mode": "REQUIRED", "description": "e.g. total_questions_asked, avg_response_latency_ms, source_open_count, feedback_up_count." },
+  { "name": "dimension", "type": "STRING", "mode": "NULLABLE", "description": "topic_id when the metric is topic-scoped; NULL for a global metric. Kept flexible (key/value) rather than wide/rigid columns since the metric set is expected to grow." },
+  { "name": "metric_value", "type": "FLOAT64", "mode": "REQUIRED" },
+  { "name": "computed_at", "type": "TIMESTAMP", "mode": "REQUIRED" }
+]

@@ -98,12 +98,15 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Tests: 20 new backend tests (chat/topics/knowledge/admin routes + the pure `extract_candidate_knowledge_ids` helper + trace store), all hermetic. 91 tests total across the whole repo
 - [x] **Real browser verification**, not just `curl`: used Playwright (headless Chromium) to drive the actual running app — asked a real question, confirmed grounded answer + 3 source cards + 1 related-topic chip rendered; clicked through Topics, Admin, Agent Observability, and Governance; captured screenshots of all 6 states; confirmed zero browser console errors. First time this project's UI was actually looked at rather than just its API
 
-### Phase 7 — Streaming
-- [ ] Event emission from React/FastAPI for `QUESTION_ASKED`, `RESPONSE_GENERATED`, `SOURCE_OPENED`, `RELATED_TOPIC_OPENED`, `FEEDBACK_SUBMITTED`
-- [ ] Terraform `pubsub` module: topic(s) + subscription(s)
-- [ ] `pipelines/streaming/`: Dataflow job — validate event, enrich topic/type, aggregate metrics → BigQuery
-- [ ] `GET /api/admin/analytics` + `AdminOverview.tsx` analytics section
-- [ ] Tests: event schema validation, aggregation logic
+### Phase 7 — Streaming — **done** (2026-09-21)
+- [x] Event emission: `QUESTION_ASKED`/`RESPONSE_GENERATED` published server-side by `backend/src/api/chat.py` (the one place that reliably knows both happened); `SOURCE_OPENED`/`RELATED_TOPIC_OPENED`/`FEEDBACK_SUBMITTED` fired by the frontend via a new `POST /api/events` (fire-and-forget, never blocks the UI). No question/answer text ever captured — Section 16's privacy guidance, enforced by the schema itself (`backend/src/schemas/events.py`) having no free-text field
+- [x] Terraform `pubsub` module: `shifahealth-events` topic + `shifahealth-events-streaming-sub` pull subscription, applied
+- [x] `pipelines/streaming/`: Beam pipeline (`transforms.py` pure validation + `pipeline.py` DAG + `run.py` CLI with `--run-for-seconds` for bounded DEV demo runs) reading Pub/Sub → validate → `curated.fact_user_question`. Invalid events quarantine into a BigQuery table (`curated.quarantined_events`), not GCS like batch's quarantine — an unbounded streaming file sink needs window/trigger finalization for no real benefit at this volume; a streaming insert needs none of that
+- [x] `scripts/refresh_analytics.py`: aggregates `curated.fact_user_question` into `semantic.question_analytics` (key/value metrics table, global + per-topic). A periodic re-runnable script, not continuous windowed streaming aggregation — same "simplest defensible option" reasoning as `build_index.py`, written up in DEVLOG
+- [x] `GET /api/admin/analytics` + `AdminOverview.tsx` analytics section (5 stat tiles: questions asked, responses generated, avg latency, source opens, feedback up/down)
+- [x] Bonus, not originally ticketed: related-topic chips now navigate to `/topics?topic=<id>` (deep link), and answers get a real 👍/👎 feedback control
+- [x] Tests: 14 new backend tests (event schema/route validation, including a test that a client cannot fabricate `QUESTION_ASKED`/`RESPONSE_GENERATED`), 9 new streaming-pipeline tests (validation, normalization, native-datetime handling). 100+ tests total across the repo
+- [x] **Real end-to-end verification**, not mocked: ran the actual Beam streaming pipeline against the real Pub/Sub subscription while firing real chat requests and interaction events; confirmed all 5 event types landed in `curated.fact_user_question` with correct structured fields; published two deliberately malformed messages directly to Pub/Sub and confirmed both were quarantined with accurate reasons; ran `refresh_analytics.py` and confirmed `GET /api/admin/analytics` returned the exact aggregated numbers; Playwright-verified the full browser flow (ask → source click → feedback click → related-topic click → deep-linked Topics page → Admin analytics tiles), zero console errors
 
 ### Phase 8 — Platform
 - [ ] Terraform `cloud_run` module, instantiated twice: `backend` (public ingress) and `agents` (private/internal ingress, no public access)
@@ -160,7 +163,12 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 7 (Streaming): emit `QUESTION_ASKED`/`RESPONSE_GENERATED`/`SOURCE_OPENED`/`RELATED_TOPIC_OPENED`/
-`FEEDBACK_SUBMITTED` events from React/FastAPI, add the `pubsub` Terraform module, and a `pipelines/streaming/`
-Beam job that validates/enriches/aggregates them into BigQuery — which is also the natural point to replace
-Phase 6's in-memory trace store with real durable, cross-instance trace persistence.
+Start Phase 8 (Platform): Terraform `cloud_run` module (instantiated for both `backend` and `agents`), `iam`
+module (per-service accounts, the `backend -> agents` `run.invoker` binding), `artifact_registry`, Secret Manager
+wiring, `observability` module, and the one `functions/` Cloud Function. Also the right time to replace the
+`/internal/*` shared-secret auth with real Cloud Run IAM ID-token verification (ticketed back in Phase 5).
+
+Note: `backend/src/services/trace_store.py` (agent traces) is still in-memory, not durable — that's a deliberate,
+narrower scope than it might sound: Phase 7 built durable storage for *interaction* events
+(`curated.fact_user_question`), not *agent* traces, which are a different concern the plan doesn't explicitly
+ask to be persisted via streaming. Revisit only if a real need for durable trace history shows up.

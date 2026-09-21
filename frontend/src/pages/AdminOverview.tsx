@@ -1,15 +1,19 @@
 import { useEffect, useState } from "react";
-import { getQualitySummary } from "../api/client";
-import type { QualitySummary } from "../types/api";
+import { getAnalyticsSummary, getQualitySummary } from "../api/client";
+import type { AnalyticsSummary, QualitySummary } from "../types/api";
 
 export default function AdminOverview() {
   const [summary, setSummary] = useState<QualitySummary | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     getQualitySummary()
       .then(setSummary)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load quality summary."));
+    getAnalyticsSummary()
+      .then(setAnalytics)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load analytics."));
   }, []);
 
   return (
@@ -66,6 +70,40 @@ export default function AdminOverview() {
               ))}
             </tbody>
           </table>
+        </>
+      )}
+
+      {analytics && (
+        <>
+          <h2>Interaction analytics</h2>
+          <p className="analytics-note">
+            From curated.fact_user_question, aggregated by scripts/refresh_analytics.py. Refreshed{" "}
+            {analytics.computed_at ? new Date(analytics.computed_at).toLocaleString() : "never yet"}.
+          </p>
+          <div className="stat-row">
+            <div className="stat-tile">
+              <strong>{analytics.global.total_questions_asked ?? 0}</strong>
+              <span>Questions asked</span>
+            </div>
+            <div className="stat-tile">
+              <strong>{analytics.global.total_responses_generated ?? 0}</strong>
+              <span>Responses generated</span>
+            </div>
+            <div className="stat-tile">
+              <strong>{Math.round(analytics.global.avg_response_latency_ms ?? 0)} ms</strong>
+              <span>Avg. response latency</span>
+            </div>
+            <div className="stat-tile">
+              <strong>{analytics.global.total_source_opens ?? 0}</strong>
+              <span>Source opens</span>
+            </div>
+            <div className="stat-tile">
+              <strong>
+                👍 {analytics.global.feedback_up_count ?? 0} / 👎 {analytics.global.feedback_down_count ?? 0}
+              </strong>
+              <span>Feedback</span>
+            </div>
+          </div>
         </>
       )}
     </section>

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { getTopicKnowledge, getTopics } from "../api/client";
 import type { KnowledgeSummary, Topic } from "../types/api";
 
 export default function Topics() {
+  const [searchParams] = useSearchParams();
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(searchParams.get("topic"));
   const [records, setRecords] = useState<KnowledgeSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 

@@ -53,6 +53,7 @@ def test_chat_endpoint_builds_sources_and_related_topics(monkeypatch):
     fake_source_record = {"source_id": "src_acog_pcos", "url": "https://www.acog.org/..."}
     fake_related = [{"topic_id": "menopause", "topic_name": "Menopause", "parent_category": "Hormonal Health"}]
 
+    published = []
     monkeypatch.setattr("src.api.chat.AgentClient.invoke", lambda self, message, user_id, session_id: fake_agent_result)
     monkeypatch.setattr("src.api.chat.repo.get_bigquery_client", lambda: object())
     monkeypatch.setattr("src.api.chat.repo.get_knowledge_record", lambda client, project, kid: fake_knowledge_record)
@@ -60,6 +61,7 @@ def test_chat_endpoint_builds_sources_and_related_topics(monkeypatch):
     monkeypatch.setattr(
         "src.api.chat.repo.list_related_topics", lambda client, project, topic_id, limit: fake_related
     )
+    monkeypatch.setattr("src.api.chat.publish_event", lambda event: published.append(event))
 
     response = client.post("/api/chat", json={"message": "Can PCOS cause irregular periods?"})
     assert response.status_code == 200
@@ -78,6 +80,12 @@ def test_chat_endpoint_builds_sources_and_related_topics(monkeypatch):
     assert body["disclaimer"] == "Educational information only; not a substitute for professional medical care."
     assert body["trace_id"]
 
+    assert [e["event_type"] for e in published] == ["QUESTION_ASKED", "RESPONSE_GENERATED"]
+    response_event = published[1]
+    assert response_event["trace_id"] == body["trace_id"]
+    assert response_event["source_count"] == 1
+    assert response_event["latency_ms"] is not None
+
 
 def test_chat_endpoint_handles_no_candidates(monkeypatch):
     fake_agent_result = {
@@ -86,6 +94,7 @@ def test_chat_endpoint_handles_no_candidates(monkeypatch):
     }
     monkeypatch.setattr("src.api.chat.AgentClient.invoke", lambda self, message, user_id, session_id: fake_agent_result)
     monkeypatch.setattr("src.api.chat.repo.get_bigquery_client", lambda: object())
+    monkeypatch.setattr("src.api.chat.publish_event", lambda event: None)
 
     response = client.post("/api/chat", json={"message": "What medication should I take?"})
     assert response.status_code == 200

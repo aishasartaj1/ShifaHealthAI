@@ -39,3 +39,17 @@ def test_get_agent_trace_found():
 def test_get_agent_trace_not_found():
     response = client.get("/api/admin/agents/does-not-exist")
     assert response.status_code == 404
+
+
+def test_analytics_endpoint(monkeypatch):
+    fake_summary = {
+        "global": {"total_questions_asked": 12.0, "avg_response_latency_ms": 15234.5},
+        "by_topic": [{"topic_id": "pcos", "source_open_count": 3.0}],
+        "computed_at": "2026-09-21T08:00:00+00:00",
+    }
+    monkeypatch.setattr("src.api.admin.repo.get_analytics_summary", lambda client, project: fake_summary)
+    monkeypatch.setattr("src.api.admin.repo.get_bigquery_client", lambda: object())
+
+    response = client.get("/api/admin/analytics")
+    assert response.status_code == 200
+    assert response.json() == fake_summary

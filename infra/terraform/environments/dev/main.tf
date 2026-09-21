@@ -59,3 +59,10 @@ module "storage" {
 
   depends_on = [google_project_service.required]
 }
+
+module "pubsub" {
+  source     = "../../modules/pubsub"
+  project_id = var.project_id
+
+  depends_on = [google_project_service.required]
+}

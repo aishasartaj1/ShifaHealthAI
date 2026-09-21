@@ -132,3 +132,32 @@ def get_quality_summary(client: bigquery.Client, project: str) -> dict:
         "by_topic": topic_rows,
         "ineligible_records": ineligible_records,
     }
+
+
+def get_analytics_summary(client: bigquery.Client, project: str) -> dict:
+    """Backs GET /api/admin/analytics. Reads semantic.question_analytics, the key/value metrics
+    table scripts/refresh_analytics.py maintains (see its module docstring for why this is a
+    periodic-refresh script rather than continuous streaming aggregation) - reshapes the flat
+    (metric_name, dimension, metric_value) rows into a global dict + a by-topic breakdown."""
+    rows = [
+        dict(row)
+        for row in client.query(
+            f"SELECT metric_name, dimension, metric_value, computed_at FROM `{project}.semantic.question_analytics`"
+        ).result()
+    ]
+    global_metrics: dict[str, float] = {}
+    by_topic: dict[str, dict[str, float]] = {}
+    computed_at = None
+
+    for row in rows:
+        computed_at = row["computed_at"]
+        if row["dimension"] is None:
+            global_metrics[row["metric_name"]] = row["metric_value"]
+        else:
+            by_topic.setdefault(row["dimension"], {})[row["metric_name"]] = row["metric_value"]
+
+    return {
+        "global": global_metrics,
+        "by_topic": [{"topic_id": topic_id, **metrics} for topic_id, metrics in by_topic.items()],
+        "computed_at": str(computed_at) if computed_at else None,
+    }

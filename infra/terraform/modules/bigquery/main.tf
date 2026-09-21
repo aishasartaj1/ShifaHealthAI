@@ -1,10 +1,13 @@
 # Three datasets matching the plan's layering (Section 9): raw ingestion, curated dimensional
 # model, and the semantic/AI-ready layer the agent and API actually read from.
 #
-# Only the raw tables are defined here, matching what data/seed/*.csv actually loads into today.
-# curated.* and semantic.* tables are intentionally deferred to Phase 3, once the Dataflow
-# transform logic (dimensional model, ai_eligible computation) that produces them is written —
-# defining those schemas now would mean guessing at that logic instead of deriving it.
+# curated.* and semantic.* table schemas were added in Phase 3, once pipelines/batch/pipeline.py
+# (the Dataflow/Beam job that populates them) existed to derive them from — not guessed ahead of
+# that logic in Phase 2. fact_user_question and semantic.question_analytics are NOT defined here:
+# they're populated by streaming events (Phase 7), not this batch job, and don't exist yet.
+#
+# Terraform owns schema (CREATE_NEVER in the pipeline's BigQuery writes); the batch pipeline owns
+# data (WRITE_TRUNCATE — it recomputes curated/semantic fully on every run).
 
 resource "google_bigquery_dataset" "raw" {
   project     = var.project_id
@@ -57,4 +60,68 @@ resource "google_bigquery_table" "raw_reviews" {
   table_id            = "raw_reviews"
   deletion_protection = false
   schema              = file("${path.module}/schemas/raw_reviews.json")
+}
+
+resource "google_bigquery_table" "dim_health_topic" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.curated.dataset_id
+  table_id            = "dim_health_topic"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/curated_dim_health_topic.json")
+}
+
+resource "google_bigquery_table" "dim_source" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.curated.dataset_id
+  table_id            = "dim_source"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/curated_dim_source.json")
+}
+
+resource "google_bigquery_table" "dim_knowledge" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.curated.dataset_id
+  table_id            = "dim_knowledge"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/curated_dim_knowledge.json")
+}
+
+resource "google_bigquery_table" "fact_medical_review" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.curated.dataset_id
+  table_id            = "fact_medical_review"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/curated_fact_medical_review.json")
+}
+
+resource "google_bigquery_table" "knowledge_catalog" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.semantic.dataset_id
+  table_id            = "knowledge_catalog"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/semantic_knowledge_catalog.json")
+}
+
+resource "google_bigquery_table" "approved_knowledge" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.semantic.dataset_id
+  table_id            = "approved_knowledge"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/semantic_knowledge_catalog.json") # same shape, filtered to review_status == APPROVED
+}
+
+resource "google_bigquery_table" "agent_eligible_knowledge" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.semantic.dataset_id
+  table_id            = "agent_eligible_knowledge"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/semantic_agent_eligible_knowledge.json")
+}
+
+resource "google_bigquery_table" "topic_knowledge_summary" {
+  project             = var.project_id
+  dataset_id          = google_bigquery_dataset.semantic.dataset_id
+  table_id            = "topic_knowledge_summary"
+  deletion_protection = false
+  schema              = file("${path.module}/schemas/semantic_topic_knowledge_summary.json")
 }

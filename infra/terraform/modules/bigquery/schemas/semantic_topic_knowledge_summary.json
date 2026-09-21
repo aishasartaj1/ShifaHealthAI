@@ -1,0 +1,10 @@
+[
+  { "name": "topic_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "topic_name", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "total_count", "type": "INTEGER", "mode": "REQUIRED" },
+  { "name": "eligible_count", "type": "INTEGER", "mode": "REQUIRED" },
+  { "name": "approved_count", "type": "INTEGER", "mode": "REQUIRED" },
+  { "name": "needs_review_count", "type": "INTEGER", "mode": "REQUIRED" },
+  { "name": "expired_count", "type": "INTEGER", "mode": "REQUIRED" },
+  { "name": "stale_count", "type": "INTEGER", "mode": "REQUIRED" }
+]

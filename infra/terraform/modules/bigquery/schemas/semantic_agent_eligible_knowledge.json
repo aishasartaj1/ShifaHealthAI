@@ -1,0 +1,6 @@
+[
+  { "name": "knowledge_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "topic_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "title", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "summary", "type": "STRING", "mode": "REQUIRED", "description": "The text that gets chunked and embedded in Phase 4 — nothing more than what's needed for retrieval." }
+]

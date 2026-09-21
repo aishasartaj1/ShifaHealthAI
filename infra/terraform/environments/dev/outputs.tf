@@ -21,3 +21,11 @@ output "bigquery_datasets" {
     semantic = module.bigquery.semantic_dataset_id
   }
 }
+
+output "storage_buckets" {
+  description = "GCS buckets for raw file ingestion (future) and quarantine (Phase 3 batch pipeline)."
+  value = {
+    raw        = module.storage.raw_bucket
+    quarantine = module.storage.quarantine_bucket
+  }
+}

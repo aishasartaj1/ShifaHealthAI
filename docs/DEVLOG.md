@@ -200,3 +200,91 @@ three layers exist by the MVP.
   disagree — worth understanding the difference rather than memorizing the fix command.
 
 ---
+
+## 2026-09-21 — Phase 3: Beam batch pipeline, curated/semantic tables populated for real
+
+**What:** Built `pipelines/batch/` as three layers — `transforms.py` (pure Python, no Beam import: every
+validation rule, the dedup policy, and `compute_ai_eligible`, all unit-tested with plain dicts), `pipeline.py`
+(the actual Beam DAG: dedup → validate → enrich → write, per table, wired with real side inputs), and `run.py`
+(CLI). Extended the `bigquery` Terraform module with the 8 curated/semantic table schemas that Phase 2 deferred,
+and added a new `storage` module for the `raw` and `quarantine` GCS buckets. Applied both, then ran the pipeline
+for real against `shifahealthai` on Beam's `DirectRunner`.
+
+**The DAG, in order:** read all 4 `raw.*` tables → dedup each by its ID field (`GroupByKey` + a `DoFn`; if more
+than one row shares an ID, ALL copies get quarantined — no silently-picked "winner") → validate topics/sources
+first (no FK dependencies) → build `topics_by_id`/`sources_by_id` side-input dicts from only the rows that passed
+→ validate + enrich knowledge against those dicts (this is where `ai_eligible` finally gets computed, and where
+`topic_name`/`source_name` get denormalized in) → build a `knowledge_by_id` dict from the enriched result →
+validate reviews against it. Every rejected row, from any stage, gets tagged with its source table and reason and
+flows into one `Flatten` → JSON-lines → GCS quarantine sink. Valid rows get written to `curated.*` (plain
+validated/typed data) and `semantic.*` (`knowledge_catalog` = everything valid with denormalized names;
+`approved_knowledge` = filtered to `review_status==APPROVED`; `agent_eligible_knowledge` = filtered to
+`ai_eligible==true`, projected down to just the 4 fields Phase 4's chunking needs; `topic_knowledge_summary` = a
+`GroupByKey` on `topic_id` with per-status counts).
+
+**Why:**
+- Validation logic lives in plain functions, not Beam `DoFn`s, specifically so `pytest` could test 21 cases (every
+  required-field, enum, and FK failure mode, plus the `ai_eligible` truth table) in milliseconds with no Beam
+  runner, no BigQuery, no GCS — Beam's own `TestPipeline` machinery would have made the same tests much slower to
+  write and run for no extra coverage, since the DAG wiring itself is thin enough to verify by actually running it.
+- Ran on `DirectRunner`, not submitted to managed Dataflow — 91 total rows across 4 tables doesn't justify
+  spinning up Dataflow workers, and the code is runner-agnostic (`run.py --runner DataflowRunner` would submit
+  the identical pipeline for real if the data volume ever justified it).
+- Quarantining ALL copies of a duplicate ID (not just "extra" copies past the first) is the same reasoning as
+  Phase 2's seed-data validator: there's no principled way to know which duplicate is "correct" without a human
+  looking at it, so the pipeline refuses to guess.
+- `curated.*` keeps `ai_eligible` as a plain boolean column but does NOT carry `topic_name`/`source_name` —
+  those denormalized display fields belong in the semantic layer (which is what the API/agent actually read),
+  not in a dimensional table whose job is to stay normalized.
+- `fact_user_question` and `semantic.question_analytics` were **not** built, on purpose — nothing produces that
+  data until Phase 7 (streaming events), so a table for it now would just be an empty, unexplainable shell.
+
+**Bugs hit and fixed while actually running this against real BigQuery** (the value of not just writing this
+against mocks):
+1. `WriteToBigQuery` with `method=STREAMING_INSERTS` **rejects `WRITE_TRUNCATE`** — the streaming insert API has
+   no way to truncate first. Fixed by truncating all 8 output tables via a plain `bigquery.Client` call
+   (`TRUNCATE TABLE`) immediately before the Beam pipeline runs, then using `WRITE_APPEND` inside it. Net effect
+   is identical (full-refresh-per-run), just split into two explicit steps instead of one disposition flag —
+   worth knowing this is a real BigQuery/Beam constraint, not a bug in the pipeline design.
+2. `ReadFromBigQuery` hands back `DATE` columns as native `datetime.date` objects, not ISO strings. My first
+   version of `_parse_date` in `transforms.py` only handled strings — it would have rejected every single
+   knowledge row as "unparseable date" the moment this ran against real data, even though every unit test
+   (which used string dates directly) passed. Caught this **before** the first real run by reasoning about what
+   the BigQuery client actually returns, not by it failing — added a regression test
+   (`test_validate_knowledge_accepts_native_date_objects`) to lock it in.
+3. The quarantine JSON serialization step (`json.dumps` on a quarantined row) hit the *same* `date`-object issue
+   from a different angle: a quarantined row's raw fields — including `published_date`/`last_reviewed_date` —
+   are native `date` objects, and `json.dumps` doesn't know how to serialize those by default. This one **did**
+   fail on the first real run (deliberately triggered — see below), with `TypeError: Object of type date is not
+   JSON serializable`. Fixed with a `default=` handler on `json.dumps` that calls `.isoformat()` on any `date`.
+4. Two Beam `RuntimeError`s from duplicate transform labels (`_as_dict_by` called three times, each building an
+   anonymous `beam.Map` with the same auto-generated label) — fixed by passing an explicit label string to every
+   reused helper. Straightforward once seen, but a reminder that Beam requires every step in a pipeline to have a
+   unique name, generated ones included.
+
+**Verified, not just asserted:** ran `bq query` after each pipeline run rather than trusting "pipeline done!" —
+row counts matched exactly (6/9/38/38 curated, 38/35/33/6 semantic) on the clean run. Then deliberately inserted
+one row into `raw.raw_knowledge` with a nonexistent `topic_id`, re-ran, and confirmed via `gsutil cat` that it
+landed in the quarantine JSONL with reason `"unknown topic_id 'nonexistent_topic'"`, while `curated.dim_knowledge`
+and `semantic.agent_eligible_knowledge` counts stayed exactly the same (the bad row did not leak through). Then
+deleted the test row and re-ran to restore the clean state. This is the same instinct as Phase 2's deliberately-
+seeded governance failures: don't just build a pipeline that always accepts everything and call it "governed" —
+prove the rejection path actually rejects something.
+
+**Deviations from the plan:** None beyond what's already logged (the `agents/` service split). Building
+curated/semantic schemas now, rather than in Phase 2, was the planned sequencing, not a new deviation.
+
+**Interview notes:**
+- Be able to walk through the DAG's dependency order from memory: why topics/sources validate first, why
+  knowledge's side inputs come from validated topics/sources rather than raw ones, why reviews depend on enriched
+  knowledge rather than raw knowledge. This ordering is the actual enforcement of referential integrity, not
+  decoration.
+- Know the STREAMING_INSERTS + WRITE_TRUNCATE incompatibility cold — it's a very findable "have you actually run
+  this" question, and the fix (truncate-then-append) is a real, defensible pattern, not a workaround to be
+  embarrassed about.
+- Be ready to explain why `DirectRunner` was the right call here and what would change the answer (data volume,
+  latency requirements, need for autoscaling/retries that only a managed runner provides).
+- The quarantine JSON bug is a good "tell me about a bug you caught" story: found by deliberately trying to break
+  the thing I'd just built, not by a user report.
+
+---

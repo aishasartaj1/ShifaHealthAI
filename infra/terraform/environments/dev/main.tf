@@ -22,6 +22,7 @@ locals {
     "run.googleapis.com",               # Cloud Run (FastAPI backend serving)
     "artifactregistry.googleapis.com",  # container images
     "bigquery.googleapis.com",          # raw/curated/semantic layers, governance, analytics
+    "bigquerystorage.googleapis.com",   # BigQuery Storage Read API - used by Beam's DIRECT_READ
     "storage.googleapis.com",           # Cloud Storage raw + quarantine buckets
     "pubsub.googleapis.com",            # streaming application events
     "dataflow.googleapis.com",          # batch + streaming pipelines
@@ -45,6 +46,14 @@ resource "google_project_service" "required" {
 
 module "bigquery" {
   source     = "../../modules/bigquery"
+  project_id = var.project_id
+  location   = var.region
+
+  depends_on = [google_project_service.required]
+}
+
+module "storage" {
+  source     = "../../modules/storage"
   project_id = var.project_id
   location   = var.region
 

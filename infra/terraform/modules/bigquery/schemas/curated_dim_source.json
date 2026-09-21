@@ -1,0 +1,7 @@
+[
+  { "name": "source_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_name", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_type", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "url", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_status", "type": "STRING", "mode": "REQUIRED" }
+]

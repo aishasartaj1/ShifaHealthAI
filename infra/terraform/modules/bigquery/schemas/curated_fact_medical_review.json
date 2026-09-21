@@ -1,0 +1,8 @@
+[
+  { "name": "review_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "knowledge_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "reviewer_role", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "review_date", "type": "DATE", "mode": "REQUIRED" },
+  { "name": "review_status", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "notes", "type": "STRING", "mode": "NULLABLE" }
+]

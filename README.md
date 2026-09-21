@@ -119,9 +119,12 @@ quota project doesn't match your target project, also run `gcloud auth applicati
 <project_id>` — otherwise Python client libraries (e.g. `seed_bigquery.py` below) will get a 403 billing against
 the wrong project.
 
-`terraform apply` enables the required GCP APIs and provisions the `raw`/`curated`/`semantic` BigQuery datasets
-plus the `raw` layer's 4 tables (`raw_topics`, `raw_sources`, `raw_knowledge`, `raw_reviews`). It does not yet
-provision Cloud Run, Storage, or Pub/Sub resources — those land in their respective phases.
+`terraform apply` enables the required GCP APIs and provisions:
+- `raw`/`curated`/`semantic` BigQuery datasets, the 4 `raw` tables, the 4 `curated` tables, and the 4 `semantic`
+  tables (schemas only — Terraform owns schema, the batch pipeline owns data)
+- `<project_id>-raw` and `<project_id>-quarantine` GCS buckets
+
+It does not yet provision Cloud Run or Pub/Sub resources — those land in their respective phases.
 
 ### Seed data (Phase 2)
 
@@ -134,7 +137,25 @@ python scripts/seed_bigquery.py --project shifahealthai
 
 `data/seed/` holds 6 topics and 38 knowledge records (synthetic educational summaries, each citing a real public
 source — see [docs/DEVLOG.md](docs/DEVLOG.md) for the sourcing approach). `ai_eligible` is intentionally not in
-this seed data — it's a governance flag computed downstream by the Phase 3 Dataflow job, not authored by hand.
+this seed data — it's a governance flag computed downstream by the batch pipeline, not authored by hand.
+
+### Batch pipeline (Phase 3)
+
+```bash
+cd pipelines/batch
+python -m venv .venv
+.venv/Scripts/activate
+pip install -r requirements-dev.txt
+pytest tests/                                  # pure transform-logic tests, no GCP calls
+python run.py --project shifahealthai --quarantine-bucket shifahealthai-quarantine
+```
+
+Reads `raw.*`, validates + dedupes + enriches, writes `curated.*` and `semantic.*` (`WRITE_APPEND` onto tables the
+script truncates first — full-refresh-per-run semantics), and routes anything that fails validation to
+`gs://<project_id>-quarantine/<run_id>/quarantine*.jsonl` instead of dropping it. Runs on Beam's `DirectRunner` by
+default — real reads/writes against BigQuery + GCS, just executed locally rather than as a managed Dataflow job
+(appropriate at this data volume; pass `--runner DataflowRunner --temp-location gs://... --staging-location
+gs://...` to submit it as an actual Dataflow job instead).
 
 ## Live demo
 

@@ -64,12 +64,12 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Governance fields present in raw schema: `review_status`, `source_status`, `content_status`, `content_version`. **`ai_eligible` deliberately excluded from raw** — it's a derived flag, computed by the Phase 3 Dataflow transform from the other three, not authored by hand (see DEVLOG)
 - [x] Tests: `scripts/validate_seed_data.py` + `scripts/test_validate_seed_data.py` — schema, enum, and foreign-key checks, run before any BigQuery load
 
-### Phase 3 — Batch pipeline
-- [ ] `pipelines/batch/`: Beam/Dataflow job — schema validation, normalization, dedup, metadata enrichment, quality checks
-- [ ] Quarantine path: invalid records routed to GCS quarantine bucket/prefix, not dropped
-- [ ] Curated → semantic transforms (raw → curated dimensional tables → semantic AI-ready views/tables)
-- [ ] Terraform `storage` module: raw + quarantine buckets
-- [ ] Tests: transformation unit tests (valid/invalid record cases), quarantine routing test
+### Phase 3 — Batch pipeline — **done** (2026-09-21)
+- [x] `pipelines/batch/`: Beam job (`transforms.py` pure logic + `pipeline.py` DAG + `run.py` CLI) — dedup (GroupByKey per ID field, ALL copies quarantined, no arbitrary winner), schema/enum/FK validation, `ai_eligible` enrichment
+- [x] Quarantine path: invalid + duplicate records → `gs://<project>-quarantine/<run_id>/quarantine*.jsonl`, tagged with table + reason. Verified live: injected a bad row into `raw.raw_knowledge`, confirmed it landed in quarantine with the right reason and did NOT appear in curated/semantic, then cleaned up
+- [x] Curated → semantic transforms: `curated.{dim_health_topic,dim_source,dim_knowledge,fact_medical_review}` → `semantic.{knowledge_catalog,approved_knowledge,agent_eligible_knowledge,topic_knowledge_summary}`. `fact_user_question`/`semantic.question_analytics` intentionally NOT built here — no data source populates them until Phase 7 (streaming)
+- [x] Terraform `storage` module: `<project>-raw` + `<project>-quarantine` buckets, applied. Terraform `bigquery` module extended with the 8 curated/semantic table schemas (deferred from Phase 2), applied
+- [x] Tests: `pipelines/batch/tests/test_transforms.py` (21 tests — valid/invalid cases per table, FK checks, `ai_eligible` truth table, duplicate handling, a regression test for BigQuery's native `date` objects). Ran the actual pipeline against `shifahealthai`: counts match exactly (33/38 eligible, matching Phase 2's preview)
 
 ### Phase 4 — Retrieval
 - [ ] `backend/src/retrieval/semantic.py`: embedding + vector search against `semantic.agent_eligible_knowledge`-derived chunks
@@ -153,6 +153,6 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 3 (Batch pipeline): a Beam/Dataflow job that reads `raw.*`, validates/normalizes, computes
-`ai_eligible` (the real transform logic Phase 2 deferred), routes invalid records to GCS quarantine, and writes
-`curated.*`/`semantic.*`. The `storage` Terraform module (raw + quarantine buckets) lands alongside it.
+Start Phase 4 (Retrieval): chunk + embed `semantic.agent_eligible_knowledge` (33 rows) via Vertex AI embeddings
+into a vector index, build lexical search, and the hybrid merge/rerank + query-time governance re-check
+(`backend/src/retrieval/{semantic,lexical,hybrid,governance}.py`).

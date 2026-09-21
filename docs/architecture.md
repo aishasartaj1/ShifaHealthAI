@@ -158,3 +158,11 @@ Record deviations from the source plan here as they happen, with rationale and d
   confirming the "agent calls backend via HTTP" side of the split decided above. Auth on that internal API is a
   shared-secret header, a known-temporary simplification (see "The two HTTP relationships" above) — flagged as a
   Phase 8 follow-up, not silently left unresolved.
+- _2026-09-21_ (Phase 6) — Added `GET /api/topics/{topic_id}/knowledge`, not in the plan's original Section 19
+  API list, because the topic explorer (`Topics.tsx`) needed a way to actually show a topic's records once
+  selected. Agent trace capture (`agents/src/trace.py`) was widened to record `knowledge_id`s alongside candidate
+  counts, not just counts — `POST /api/chat` needs the actual IDs to build source cards, and an ID is a
+  structured reference, not raw content, so this doesn't compromise "no raw chain-of-thought." `GET
+  /api/admin/agents`/`{trace_id}` reads from a bounded, process-local, in-memory store
+  (`backend/src/services/trace_store.py`), a deliberate stand-in until Phase 7's Pub/Sub → Dataflow → BigQuery
+  pipeline gives traces real durable, cross-instance storage.

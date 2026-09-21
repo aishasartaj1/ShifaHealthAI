@@ -7,7 +7,15 @@ class FakeTool:
 
 
 def test_summarize_result_results_list():
-    assert summarize_result({"results": [1, 2, 3]}) == {"candidate_count": 3}
+    results = [{"knowledge_id": "know_a"}, {"knowledge_id": "know_b"}, {"knowledge_id": "know_c"}]
+    assert summarize_result({"results": results}) == {
+        "candidate_count": 3,
+        "candidate_knowledge_ids": ["know_a", "know_b", "know_c"],
+    }
+
+
+def test_summarize_result_results_list_ignores_non_dict_entries():
+    assert summarize_result({"results": [1, 2]}) == {"candidate_count": 2, "candidate_knowledge_ids": []}
 
 
 def test_summarize_result_topics_list():
@@ -35,13 +43,21 @@ def test_trace_recorder_pairs_before_after_and_times_it():
     tool = FakeTool("search_knowledge")
 
     recorder.before_tool(tool, {"query": "PCOS"}, tool_context=None)
-    recorder.after_tool(tool, {"query": "PCOS"}, tool_context=None, result={"results": [1, 2]})
+    recorder.after_tool(
+        tool,
+        {"query": "PCOS"},
+        tool_context=None,
+        result={"results": [{"knowledge_id": "know_pcos_001"}, {"knowledge_id": "know_pcos_004"}]},
+    )
 
     assert len(recorder.tool_calls) == 1
     call = recorder.tool_calls[0]
     assert call["tool"] == "search_knowledge"
     assert call["args"] == {"query": "PCOS"}
-    assert call["result_summary"] == {"candidate_count": 2}
+    assert call["result_summary"] == {
+        "candidate_count": 2,
+        "candidate_knowledge_ids": ["know_pcos_001", "know_pcos_004"],
+    }
     assert isinstance(call["latency_ms"], float)
     assert "_started_at" not in call
 

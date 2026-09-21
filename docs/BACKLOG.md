@@ -90,12 +90,13 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Tests: 16 new `agents/` tests (mocked-HTTP tool contracts, pure trace-logic), 8 new `backend/` tests (internal API auth + routes, agent_client contract) — 46 tests total across both services, all hermetic (no live GCP calls)
 - [x] **Real end-to-end verification** (not mocked): ran backend + agents together, called `/invoke` directly and via `AgentClient`, for real, against live Vertex AI Gemini + BigQuery. Confirmed: correct grounded, cited answers (matches the plan's own PCOS example); the diagnosis/treatment refusal guardrail triggers with zero tool calls; multi-turn session memory. Found and fixed a real bug in the process — recreating the ADK `Runner` per-request silently wiped session history every time; fixed with a module-level singleton `Runner` + `ContextVar`-based per-request trace isolation
 
-### Phase 6 — Application
-- [ ] `POST /api/chat`, `GET /api/topics`, `GET /api/knowledge/{id}`, `GET /api/sources/{id}` endpoints
-- [ ] Frontend `Assistant.tsx`: question input, grounded answer, source cards, related topics, educational disclaimer
-- [ ] Frontend `Topics.tsx`: topic/knowledge explorer
-- [ ] Admin console shell: `AdminOverview.tsx`, `AgentObservability.tsx`, `Governance.tsx` + `GET /api/admin/quality`, `/admin/agents`, `/admin/agents/{trace_id}`
-- [ ] Tests: API response schema tests, basic frontend component tests
+### Phase 6 — Application — **done** (2026-09-21)
+- [x] `POST /api/chat`, `GET /api/topics`, `GET /api/knowledge/{id}`, `GET /api/sources/{id}` — plus `GET /api/topics/{topic_id}/knowledge`, added beyond the original list because Topics.tsx needed something to show once a topic is selected (see DEVLOG)
+- [x] Frontend `Assistant.tsx`: question input, grounded answer, source cards, related-topic chips, educational disclaimer — session id generated client-side, persists across turns in one visit
+- [x] Frontend `Topics.tsx`: topic list -> click -> knowledge records for that topic, with review/content status badges
+- [x] Admin console shell: `AdminOverview.tsx` (quality stats + per-topic table), `AgentObservability.tsx` (trace list + tool-call detail), `Governance.tsx` (ineligible-records table) — backed by `GET /api/admin/quality` (bundles Section 25's quality metrics with the Section 4.2 non-eligible-records view, since the plan specifies one endpoint for both), `GET /api/admin/agents` + `/agents/{trace_id}` (backed by an in-memory trace store — durable/cross-instance storage is Phase 7's job, not duplicated here)
+- [x] Tests: 20 new backend tests (chat/topics/knowledge/admin routes + the pure `extract_candidate_knowledge_ids` helper + trace store), all hermetic. 91 tests total across the whole repo
+- [x] **Real browser verification**, not just `curl`: used Playwright (headless Chromium) to drive the actual running app — asked a real question, confirmed grounded answer + 3 source cards + 1 related-topic chip rendered; clicked through Topics, Admin, Agent Observability, and Governance; captured screenshots of all 6 states; confirmed zero browser console errors. First time this project's UI was actually looked at rather than just its API
 
 ### Phase 7 — Streaming
 - [ ] Event emission from React/FastAPI for `QUESTION_ASKED`, `RESPONSE_GENERATED`, `SOURCE_OPENED`, `RELATED_TOPIC_OPENED`, `FEEDBACK_SUBMITTED`
@@ -159,8 +160,7 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 6 (Application): wire `backend/src/services/agent_client.py` behind a real `POST /api/chat`, add
-`GET /api/topics`, `GET /api/knowledge/{id}`, `GET /api/sources/{id}`, and build the frontend's `Assistant.tsx`
-(question input, grounded answer, source cards, related topics, disclaimer), `Topics.tsx`, and an admin console
-shell (`AdminOverview.tsx`, `AgentObservability.tsx`, `Governance.tsx`) backed by `GET /api/admin/quality`,
-`/admin/agents`, `/admin/agents/{trace_id}`.
+Start Phase 7 (Streaming): emit `QUESTION_ASKED`/`RESPONSE_GENERATED`/`SOURCE_OPENED`/`RELATED_TOPIC_OPENED`/
+`FEEDBACK_SUBMITTED` events from React/FastAPI, add the `pubsub` Terraform module, and a `pipelines/streaming/`
+Beam job that validates/enriches/aggregates them into BigQuery — which is also the natural point to replace
+Phase 6's in-memory trace store with real durable, cross-instance trace persistence.

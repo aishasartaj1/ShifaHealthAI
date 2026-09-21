@@ -437,3 +437,76 @@ a placeholder, not a hidden gap.
   likely to come up as "walk me through what happens when a user asks a question."
 
 ---
+
+## 2026-09-21 — Phase 6: the public API, the frontend, and the first real browser check
+
+**What:** Built the consumer-facing surface end to end. `backend/src/api/`: `chat.py` (`POST /api/chat`),
+`topics.py` (`GET /api/topics` + `GET /api/topics/{id}/knowledge`), `knowledge.py` (`GET /api/knowledge/{id}`,
+`GET /api/sources/{id}`), `admin.py` (`GET /api/admin/quality`, `GET /api/admin/agents` + `/{trace_id}`).
+`backend/src/services/trace_store.py` (bounded in-memory trace storage). `backend/src/schemas/chat.py`
+(Pydantic request/response models). On the frontend: `Assistant.tsx` (real chat UI — question in, grounded
+answer + source cards + related-topic chips + disclaimer out), `Topics.tsx` (topic list → click → knowledge
+records with status badges), `AdminOverview.tsx` / `AgentObservability.tsx` / `Governance.tsx` (the admin
+console, three views over two backend calls), plus a proper `src/types/api.ts` and an expanded `src/api/client.ts`.
+
+**Building the response, not just relaying the agent's text:** `POST /api/chat` doesn't parse the agent's prose
+for citations (fragile — depends on the model's exact phrasing, which already varies call to call: "(Source:
+know_pcos_004)" one time, "(knowledge_id: know_pcos_004)" the next). Instead, `extract_candidate_knowledge_ids()`
+(a pure function, unit tested) pulls the actual `knowledge_id`s out of the agent's trace — specifically, whichever
+ones its `search_knowledge` tool call(s) surfaced this turn. That required widening `agents/src/trace.py`'s
+`summarize_result()` to keep the IDs, not just a count (see architecture.md's decision log). Backend then
+hydrates each ID into a real source card (title, source name, URL, last-reviewed date) via the same
+`repositories/bigquery.py` functions the internal API already used, and looks up related topics for whichever
+topics those sources belong to. Same repository code, two different callers (the agent's tools, and now the
+public API) — no duplication.
+
+**`GET /api/admin/quality` bundles two things the plan treats as related but doesn't fully specify as one
+endpoint:** Section 25's data-quality metrics (totals, per-topic eligibility breakdown) and Section 4.2's
+"quarantined/non-eligible records" governance view. Both come from the same `semantic.knowledge_catalog` +
+`semantic.topic_knowledge_summary` data, and the plan only lists one `/api/admin/quality` route — so
+`AdminOverview.tsx` and `Governance.tsx` both call it and render different subsets.
+
+**Trace storage is intentionally not BigQuery.** `trace_store.py` is a bounded (`OrderedDict`, max 200),
+process-local, in-memory dict. Building real durable/cross-instance storage now would just be redoing Phase 7's
+job (Pub/Sub → Dataflow → BigQuery) early and worse. Documented as a known limitation, not hidden.
+
+**First real browser verification of this project.** Every prior phase was verified with `curl`/`bq query`/pytest
+— correct, but never actually looked at as a person would. For Phase 6, used Playwright (no `chromium-cli`
+available in this environment, so installed `playwright` + Chromium into an isolated scratch directory rather
+than touching the frontend's own `package.json`) to drive the real running app: asked a live question, waited
+for the actual answer, and checked the DOM for real source cards and related-topic chips; clicked through
+Topics → selected PCOS → saw 6 real knowledge cards including the STALE-badged one; Admin Overview showed
+38/33/86.8%/5, matching the numbers computed all the way back in Phase 2's seed data design; Agent Observability
+showed the real trace with the actual tool call, args, and candidate IDs; Governance showed exactly the 5
+deliberately-seeded non-eligible records. Zero browser console errors. Screenshots taken and inspected at every
+step, not just "the command exited 0."
+
+**A debugging detour worth recording:** the very first `POST /api/chat` test after standing up all three
+services returned an empty `sources: []` even though the answer text correctly cited two records. Traced it by
+reading back the stored trace via `GET /api/admin/agents/{trace_id}` - its `result_summary` only had
+`candidate_count`, no `candidate_knowledge_ids`, meaning the running `agents` process was serving an *old*
+version of `trace.py` from before this session's widening edit. Root cause: a stale `agents` (and separately, a
+stale `backend`) process from Phase 5's testing was still bound to ports 8001/8000, so the new `uvicorn --port
+8001` command silently failed to bind (`WinError 10048`) while an old process kept answering health checks
+successfully - `/health` returning 200 gave false confidence that "the service is up and current" when only the
+first half was true. Found via the actual `WinError` in the redirected log file, not by guessing; fixed by
+finding the PID via `netstat -ano` and killing it before restarting. A reminder to check *which* process is
+actually listening, not just that *something* is.
+
+**Deviations from the plan:** `GET /api/topics/{topic_id}/knowledge` isn't in the plan's original API list — a
+small, explainable, UI-driven addition (Topics.tsx needs it to be an explorer and not just a topic-name list),
+not a scope expansion beyond what Section 20 already asks the page to do.
+
+**Interview notes:**
+- Be able to explain why citations are extracted from the trace rather than parsed from the model's text — this
+  is a "the model is not a reliable source of structured output unless you make it one" point, and the fix
+  (widen the trace, don't regex the prose) generalizes well beyond this one feature.
+- The stale-process bug is a good "how do you debug something that looks like it's working but isn't" story:
+  `/health` returning 200 was misleading precisely because it was *true* (a server was running) while implying
+  something false (that server had today's code). The fix was checking the actual bound PID, not trusting the
+  green checkmark.
+- Know that `/api/admin/quality`'s response is doing double duty for two different frontend pages by design, not
+  by accident — a good example of matching an implementation's shape to the API surface the plan actually
+  specifies, rather than inventing more endpoints than were asked for.
+
+---

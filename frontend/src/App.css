@@ -10,6 +10,7 @@
   gap: 1.25rem;
   padding: 0.75rem 1.5rem;
   border-bottom: 1px solid #e5e7eb;
+  flex-wrap: wrap;
 }
 
 .app-brand {
@@ -20,7 +21,285 @@
 .app-main {
   flex: 1;
   padding: 1.5rem;
-  max-width: 720px;
+  max-width: 960px;
   margin: 0 auto;
   width: 100%;
+}
+
+/* Assistant */
+
+.assistant-intro {
+  color: #555;
+}
+
+.assistant-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin: 1.5rem 0;
+}
+
+.assistant-turn {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.assistant-question {
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.assistant-answer p {
+  margin: 0 0 0.75rem;
+}
+
+.assistant-error {
+  color: #b91c1c;
+}
+
+.assistant-loading {
+  color: #666;
+  font-style: italic;
+}
+
+.assistant-form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.assistant-form input {
+  flex: 1;
+  padding: 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}
+
+.assistant-form button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  border: none;
+  background: #4f46e5;
+  color: white;
+  cursor: pointer;
+}
+
+.assistant-form button:disabled {
+  background: #a5a6f0;
+  cursor: not-allowed;
+}
+
+.source-cards,
+.related-topics {
+  margin-top: 0.75rem;
+}
+
+.source-cards h3,
+.related-topics h3 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  color: #666;
+  margin: 0 0 0.4rem;
+}
+
+.source-card {
+  display: block;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.4rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.source-card:hover {
+  border-color: #4f46e5;
+}
+
+.source-card span {
+  display: block;
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.topic-chip {
+  display: inline-block;
+  background: #eef2ff;
+  color: #4338ca;
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  margin-right: 0.4rem;
+}
+
+.disclaimer {
+  font-size: 0.8rem;
+  color: #888;
+  margin-top: 0.75rem;
+}
+
+/* Topics */
+
+.topic-list {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 1rem 0;
+}
+
+.topic-list-item {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  background: white;
+  cursor: pointer;
+}
+
+.topic-list-item.active {
+  border-color: #4f46e5;
+  background: #eef2ff;
+}
+
+.topic-list-item span {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.knowledge-list {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.knowledge-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+}
+
+.status-badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  margin-top: 0.3rem;
+}
+
+.status-badge.eligible {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.status-badge.ineligible {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+/* Admin */
+
+.stat-row {
+  display: flex;
+  gap: 1rem;
+  margin: 1rem 0;
+  flex-wrap: wrap;
+}
+
+.stat-tile {
+  flex: 1;
+  min-width: 120px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  text-align: center;
+}
+
+.stat-tile strong {
+  display: block;
+  font-size: 1.5rem;
+}
+
+.stat-tile span {
+  font-size: 0.8rem;
+  color: #666;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+}
+
+.admin-table th,
+.admin-table td {
+  border: 1px solid #e5e7eb;
+  padding: 0.4rem 0.6rem;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.trace-layout {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1rem;
+  align-items: flex-start;
+}
+
+.trace-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.trace-list button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  background: white;
+  cursor: pointer;
+}
+
+.trace-list button.active {
+  border-color: #4f46e5;
+  background: #eef2ff;
+}
+
+.trace-list button span {
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.trace-detail {
+  flex: 2;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.tool-call-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.tool-call-card pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.8rem;
+  background: #f9fafb;
+  padding: 0.4rem;
+  border-radius: 4px;
+  margin: 0.3rem 0 0;
 }

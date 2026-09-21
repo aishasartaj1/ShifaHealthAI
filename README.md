@@ -205,8 +205,44 @@ per-request with a `contextvars.ContextVar` so concurrent requests don't cross-c
 bug caught during Phase 5 (see [docs/DEVLOG.md](docs/DEVLOG.md)), not just a hypothetical one.
 
 `backend/src/services/agent_client.py` is backend's HTTP client for calling `agents`, proven against a live
-`agents` instance — it isn't wired to a public route yet; `POST /api/chat` (Phase 6) is what will call it from
-the frontend.
+`agents` instance. Wired to a public route in Phase 6 below.
+
+### Application (Phase 6)
+
+```bash
+# terminal 1 - backend
+cd backend && .venv/Scripts/uvicorn src.main:app --port 8000
+
+# terminal 2 - agents
+cd agents && .venv/Scripts/uvicorn src.main:app --port 8001
+
+# terminal 3 - frontend
+cd frontend
+npm install
+cp .env.example .env
+npm run dev   # http://localhost:5173
+```
+
+Open `http://localhost:5173`. `/` is the Women's Health Assistant (ask a question, get a grounded answer with
+source cards and related-topic chips); `/topics` is the topic/knowledge explorer; `/admin`,
+`/admin/agents`, `/admin/governance` are the AI/Data Operations Console (data-quality stats, agent traces,
+non-eligible-records view).
+
+Public API surface (`backend/src/api/`): `POST /api/chat`, `GET /api/topics`, `GET /api/topics/{topic_id}/knowledge`
+(added beyond the plan's original list — the topic explorer needed something to show once a topic is selected),
+`GET /api/knowledge/{id}`, `GET /api/sources/{id}`, `GET /api/admin/quality`, `GET /api/admin/agents` +
+`/agents/{trace_id}`. `POST /api/chat` calls `agents` via `agent_client.py`, then builds source cards and
+related topics from the agent's trace (not by parsing citations out of its prose — the trace now carries the
+actual `knowledge_id`s a `search_knowledge` call surfaced, not just a count).
+
+Agent traces are held in an in-memory store (`backend/src/services/trace_store.py`) — bounded, process-local,
+lost on restart. Durable, cross-instance trace persistence is Phase 7's job (Pub/Sub → Dataflow → BigQuery), not
+duplicated here.
+
+```bash
+cd backend && .venv/Scripts/pytest tests/ -q   # 51 tests, all hermetic
+cd frontend && npm run build                   # type-check + production bundle
+```
 
 ## Live demo
 

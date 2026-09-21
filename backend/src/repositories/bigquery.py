@@ -1,5 +1,7 @@
-"""Structured BigQuery lookups backing the internal API (backend/src/api/internal.py) — the
-"Structured SQL tools" box in architecture.md, as opposed to the hybrid RAG in retrieval/.
+"""Structured BigQuery lookups — the "Structured SQL tools" box in architecture.md, as opposed to
+the hybrid RAG in retrieval/. Shared by the internal API (backend/src/api/internal.py, the agent's
+tools) and the public API (backend/src/api/{topics,knowledge,admin}.py, the frontend) - same
+queries, same governance guarantees, different callers and different auth.
 
 All queries are parameterized (no string-interpolated user input into SQL) and read only from the
 semantic/curated layers, never raw — consistent with "the AI system should not depend directly on
@@ -84,3 +86,49 @@ def list_related_topics(client: bigquery.Client, project: str, topic_id: str, li
         LIMIT @limit
     """
     return [dict(row) for row in client.query(fallback_query, job_config=job_config).result()]
+
+
+def list_knowledge_by_topic(client: bigquery.Client, project: str, topic_id: str) -> list[dict]:
+    """Backs the topic explorer (frontend Topics.tsx) - not in the plan's original Section 19
+    API list, added because a topic explorer that can't show a topic's actual records isn't
+    much of an explorer. See docs/DEVLOG.md's Phase 6 entry."""
+    query = f"""
+        SELECT knowledge_id, title, summary, review_status, content_status, ai_eligible
+        FROM `{project}.semantic.knowledge_catalog`
+        WHERE topic_id = @topic_id
+        ORDER BY title
+    """
+    job_config = bigquery.QueryJobConfig(
+        query_parameters=[bigquery.ScalarQueryParameter("topic_id", "STRING", topic_id)]
+    )
+    return [dict(row) for row in client.query(query, job_config=job_config).result()]
+
+
+def get_quality_summary(client: bigquery.Client, project: str) -> dict:
+    """Backs GET /api/admin/quality - bundles the plan's Section 25 data-quality metrics and the
+    Section 4.2 "quarantined/non-eligible records" governance view in one response, since both
+    come from the same underlying data and the plan only specifies one endpoint for this."""
+    topic_rows = [
+        dict(row)
+        for row in client.query(
+            f"SELECT * FROM `{project}.semantic.topic_knowledge_summary` ORDER BY topic_name"
+        ).result()
+    ]
+    total = sum(row["total_count"] for row in topic_rows)
+    eligible = sum(row["eligible_count"] for row in topic_rows)
+
+    ineligible_query = f"""
+        SELECT knowledge_id, topic_id, topic_name, title, review_status, content_status
+        FROM `{project}.semantic.knowledge_catalog`
+        WHERE ai_eligible = FALSE
+        ORDER BY topic_id, knowledge_id
+    """
+    ineligible_records = [dict(row) for row in client.query(ineligible_query).result()]
+
+    return {
+        "total_knowledge_count": total,
+        "eligible_count": eligible,
+        "eligible_percentage": round(100 * eligible / total, 1) if total else 0.0,
+        "by_topic": topic_rows,
+        "ineligible_records": ineligible_records,
+    }

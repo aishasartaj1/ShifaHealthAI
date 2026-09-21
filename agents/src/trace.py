@@ -12,11 +12,18 @@ import time
 
 
 def summarize_result(result: object) -> dict:
-    """Reduce a tool's raw return value to a small, safe summary - counts and error flags, not
-    full record dumps, matching the plan's "governance rejected: 2" style observability."""
+    """Reduce a tool's raw return value to a small, safe summary - counts, IDs, and error flags,
+    never full record content (titles/summaries), matching the plan's "governance rejected: 2"
+    style observability. knowledge_ids are included (not just a count) because backend/src/api/
+    chat.py needs them to build real source cards for the consumer response - an ID is a
+    structured reference, not raw content or reasoning, so this doesn't compromise "no raw
+    chain-of-thought"."""
     if isinstance(result, dict):
         if isinstance(result.get("results"), list):
-            return {"candidate_count": len(result["results"])}
+            return {
+                "candidate_count": len(result["results"]),
+                "candidate_knowledge_ids": [r.get("knowledge_id") for r in result["results"] if isinstance(r, dict)],
+            }
         if isinstance(result.get("topics"), list):
             return {"topic_count": len(result["topics"])}
         if isinstance(result.get("related_topics"), list):

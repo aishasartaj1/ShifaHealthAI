@@ -45,7 +45,8 @@ Full detail lives in [docs/architecture.md](docs/architecture.md).
 ```
 ShifaHealthAI/
 ├── frontend/            React + TypeScript + Vite (Assistant UI, Admin console)
-├── backend/              FastAPI service: API, agent orchestrator, retrieval, repositories
+├── backend/              FastAPI service: public API, retrieval, repositories, governance
+├── agents/               Standalone Google ADK agent service (own Cloud Run deployment, private ingress)
 ├── pipelines/            Dataflow/Beam batch + streaming jobs
 ├── functions/            Cloud Function(s) for event-driven ingestion signals
 ├── data/                 Seed + synthetic demo data (no PHI)
@@ -76,8 +77,47 @@ deliberately deferred.
 
 ## Setup
 
-Not yet reproducible — this is added as each phase lands. Target: clean-clone setup instructions for local dev,
-GCP project config, Terraform apply, and running the app locally against DEV services.
+Reproducible for Phase 1 (backend + frontend skeletons, no live GCP integrations yet). This section grows as each
+later phase lands.
+
+### Backend (FastAPI)
+
+```bash
+cd backend
+python -m venv .venv
+.venv/Scripts/activate       # macOS/Linux: source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env
+pytest                       # should show 1 passed
+uvicorn src.main:app --reload --port 8000
+```
+
+Health check: `curl http://localhost:8000/health`
+
+### Frontend (React + Vite)
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev                  # http://localhost:5173
+npm run build                # type-check + production bundle
+```
+
+### Infrastructure (Terraform, DEV only)
+
+```bash
+cd infra/terraform/environments/dev
+cp terraform.tfvars.example terraform.tfvars   # edit project_id if not using shifahealthai
+terraform init
+terraform plan
+terraform apply
+```
+
+Requires `gcloud auth application-default login` once, so Terraform's Google provider can authenticate.
+`terraform apply` enables the GCP APIs required by later phases (Cloud Run, BigQuery, Pub/Sub, Dataflow, Vertex
+AI, etc.) on the target project — it does not yet provision any billable resources (no Cloud Run services,
+buckets, or datasets exist until their respective phases land).
 
 ## Live demo
 

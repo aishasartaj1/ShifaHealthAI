@@ -23,17 +23,22 @@ Status: **done** (scaffolded 2026-09-21).
 ```
 ShifaHealthAI/
 ├── frontend/                 [x] src/{pages,components,api,types}
-├── backend/                  [x] src/{api,agents,retrieval,repositories,services,schemas,config}, tests/
+├── backend/                  [x] src/{api,retrieval,repositories,services,schemas,config}, tests/
+├── agents/                   [x] standalone ADK agent service (root-level, own Cloud Run deployment — see architecture.md "Service topology")
 ├── pipelines/                [x] batch/, streaming/
 ├── functions/                [x]
 ├── data/                     [x] seed/, synthetic/
 ├── infra/terraform/          [x] modules/{storage,bigquery,pubsub,cloud_run,functions,artifact_registry,iam,observability}, environments/dev/
 ├── scripts/                  [x]
-├── docs/                     [x] architecture.md, data-model.md, governance.md, rag-design.md, demo-script.md, BACKLOG.md
+├── docs/                     [x] architecture.md, data-model.md, governance.md, rag-design.md, demo-script.md, BACKLOG.md, DEVLOG.md
 ├── .github/workflows/        [x] (empty — CI added in Phase 9)
 ├── README.md                 [x]
 └── .gitignore                [x]
 ```
+
+`agents/` is a deliberate deviation from the plan's Section 27 tree (which nested agent code under `backend/src/agents/`)
+— it's root-level because it deploys as its own Cloud Run service, not as backend code. See the 2026-09-21 entries
+in [architecture.md](architecture.md#decision-log) and [DEVLOG.md](DEVLOG.md).
 
 Remaining structural work is filling these directories with real content per the phases below — no further
 directories should be needed for the MVP.
@@ -43,14 +48,14 @@ directories should be needed for the MVP.
 Each phase below is broken into concrete tickets. Phases are sequential in intent, but a phase can start once its
 prerequisites exist, not strictly after the previous phase's polish is finished.
 
-### Phase 1 — Foundation
-- [ ] Backend: FastAPI app skeleton (`backend/src/main.py`), health-check route, config loading (`backend/src/config/`)
-- [ ] Backend: local dev instructions (venv/poetry, run command)
-- [ ] Frontend: Vite + React + TypeScript scaffold, base routing shell (`/`, `/topics`, `/admin`)
-- [ ] Frontend: local dev instructions (install, run command)
-- [ ] GCP: project selection/creation, enable required APIs (documented in README, not just done ad hoc)
-- [ ] Terraform: base provider/backend config (`infra/terraform/environments/dev/backend.tf`, `main.tf`, `variables.tf`)
-- [ ] `.env.example` for backend and frontend (no real secrets)
+### Phase 1 — Foundation — **done** (2026-09-21)
+- [x] Backend: FastAPI app skeleton (`backend/src/main.py`), health-check route, config loading (`backend/src/config/`)
+- [x] Backend: local dev instructions (README "Setup" section)
+- [x] Frontend: Vite + React + TypeScript scaffold, base routing shell (`/`, `/topics`, `/admin`)
+- [x] Frontend: local dev instructions (README "Setup" section)
+- [x] GCP: project created (`shifahealthai`, no org); required APIs enabled via `terraform apply`
+- [x] Terraform: base provider/backend config (`infra/terraform/environments/dev/backend.tf`, `main.tf`, `variables.tf`, `outputs.tf`, `terraform.tfvars.example`)
+- [x] `.env.example` for backend and frontend (no real secrets)
 
 ### Phase 2 — Data model
 - [ ] Seed data: `data/seed/health_topics.csv`, `sources.csv`, `knowledge_metadata.csv`, `medical_reviews.csv`, `safety_rules.json` (synthetic/public only, 5–8 topics)
@@ -75,10 +80,11 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [ ] Tests: hybrid merge/rerank logic, governance filter rejects ineligible candidates
 
 ### Phase 5 — Agent
-- [ ] `backend/src/agents/orchestrator.py`: single Gemini orchestrating agent
-- [ ] `backend/src/agents/tools.py`: `search_knowledge`, `get_knowledge_record`, `get_source_metadata`, `check_content_eligibility`, `query_health_topics`, `find_related_topics`
-- [ ] Agent trace capture: intent, topic, candidate counts, tools called, timing — no raw chain-of-thought
-- [ ] Tests: each tool's contract (input/output shape, governance enforcement), orchestrator intent routing (RAG vs. structured)
+- [ ] `agents/`: standalone Google ADK application (own `pyproject.toml`/requirements, own Dockerfile) — single Gemini orchestrating agent
+- [ ] `agents/tools.py` (or ADK-idiomatic equivalent): `search_knowledge`, `get_knowledge_record`, `get_source_metadata`, `check_content_eligibility`, `query_health_topics`, `find_related_topics` — these call into `backend`'s retrieval/BigQuery code, so decide: agent calls backend's internal HTTP API, or agent imports a shared retrieval package directly
+- [ ] Agent trace capture: intent, topic, candidate counts, tools called, timing — no raw chain-of-thought (ADK's built-in tracing may cover most of this)
+- [ ] `backend/src/services/agent_client.py`: backend's HTTP client for calling the private `agents` Cloud Run service (Phase 1–8 local dev equivalent: call `agents` on localhost)
+- [ ] Tests: each tool's contract (input/output shape, governance enforcement), orchestrator intent routing (RAG vs. structured), backend↔agents client contract
 
 ### Phase 6 — Application
 - [ ] `POST /api/chat`, `GET /api/topics`, `GET /api/knowledge/{id}`, `GET /api/sources/{id}` endpoints
@@ -95,11 +101,11 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [ ] Tests: event schema validation, aggregation logic
 
 ### Phase 8 — Platform
-- [ ] Terraform `cloud_run` module: backend service deployment config
-- [ ] Terraform `artifact_registry` module
-- [ ] Terraform `iam` module: least-privilege service accounts per component
+- [ ] Terraform `cloud_run` module, instantiated twice: `backend` (public ingress) and `agents` (private/internal ingress, no public access)
+- [ ] Terraform `iam` module: dedicated service account per Cloud Run service; grant `backend`'s SA `roles/run.invoker` on the `agents` service specifically (not project-wide) — the enforced trust boundary from architecture.md's "Service topology"
+- [ ] Terraform `artifact_registry` module: repository for both container images
 - [ ] Secret Manager wiring for runtime config/secrets (no secrets in Git, ever)
-- [ ] Terraform `observability` module: Cloud Logging/Monitoring baseline
+- [ ] Terraform `observability` module: Cloud Logging/Monitoring baseline for both services
 - [ ] `functions/`: one Cloud Function (raw-bucket file-arrival → ingestion-request event)
 
 ### Phase 9 — CI/CD
@@ -118,7 +124,7 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 Demo-ready when **all** of the following work end-to-end:
 
 - [ ] React assistant reachable through a live URL
-- [ ] FastAPI backend runs on Cloud Run
+- [ ] FastAPI backend and the ADK agents service both run on Cloud Run (public + private respectively)
 - [ ] At least 5 women's-health topics and 30–50 governed knowledge records available
 - [ ] BigQuery contains raw, curated, and semantic datasets
 - [ ] Batch Dataflow pipeline transforms source data and quarantines invalid records
@@ -147,5 +153,5 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 1 (Foundation). Confirm target GCP project + region before writing the Terraform backend config, since
-that's the one Phase 1 decision that's awkward to change later.
+Start Phase 2 (Data model): draft the seed CSVs/JSON (5–8 topics, 30–50 knowledge records, real source
+attribution pulled via web search — see DEVLOG), then the `bigquery` Terraform module and `scripts/seed_bigquery.py`.

@@ -15,6 +15,7 @@ not restate the full source document.
 | Controlled agent access | The Gemini agent accesses data through explicit tools rather than unrestricted raw-table access. |
 | Separate data and serving paths | Batch/stream processing is independent from synchronous user-response serving. |
 | DEV-only deployment | Terraform modules remain reusable, but only a DEV environment is provisioned. |
+| Agent runtime is its own service | The ADK agent runs as a separate, private Cloud Run service from the FastAPI backend, invoked over authenticated service-to-service HTTP. See "Service topology" below. |
 
 ## High-level flow
 
@@ -34,6 +35,38 @@ PUBLIC / SYNTHETIC DATA
 Application events: React/FastAPI -> Pub/Sub -> Dataflow -> BigQuery -> Analytics Console
 Platform: Terraform -> DEV infra | GitHub Actions -> test/validate/build/deploy DEV | IAM + Secret Manager + Logging/Monitoring
 ```
+
+## Service topology
+
+The plan's single "FastAPI (Cloud Run)" box is implemented as **two** Cloud Run services, not one — see the
+2026-09-21 decision-log entry for why:
+
+```
+React/Vite UI
+     |
+     v  POST /api/chat, GET /api/topics, /api/admin/*   (public)
+FastAPI backend  ── Cloud Run service "backend", public ingress
+     |
+     v  internal call, IAM-authenticated (service account invoker binding, no public ingress)
+ADK agent service ── Cloud Run service "agents", private ingress
+     |
+     v
+Vertex AI Gemini + retrieval/governance tools
+```
+
+- `backend/` — FastAPI. Public entrypoint for the frontend. Owns everything that *isn't* agent reasoning:
+  topics/sources/knowledge lookups, admin/governance/analytics endpoints, request validation, session/trace
+  bookkeeping, forwarding chat requests to the agent service and returning its response.
+- `agents/` — a standalone [Google ADK](https://google.github.io/adk-docs/) application. Owns the orchestrating
+  Gemini agent and its tools (`search_knowledge`, `get_knowledge_record`, `get_source_metadata`,
+  `check_content_eligibility`, `query_health_topics`, `find_related_topics`). Deployed as its own Cloud Run
+  service with **no public ingress** — only the backend's service account is granted `roles/run.invoker` on it.
+- Why split them: mirrors how ADK is meant to run (as its own agent runtime, not embedded inline in an arbitrary
+  web framework), gives a real IAM-enforced trust boundary to point to ("the web tier cannot reach Gemini or the
+  retrieval tools directly — only the agent service can, and only the backend can reach the agent service"), and
+  keeps agent code deployable/scalable independently of the web-serving code. Cost: one more Cloud Run resource,
+  one more IAM binding, one more Docker image to build in CI — accepted because it's a concrete, explainable
+  responsibility split, not scope-creep for its own sake.
 
 ## End-to-end question flow
 
@@ -65,8 +98,10 @@ Platform: Terraform -> DEV infra | GitHub Actions -> test/validate/build/deploy 
 | `query_health_topics()` | Retrieve available topics/categories |
 | `find_related_topics(topic_id)` | Support related-topic presentation |
 
-Single Gemini orchestrating agent. Do not add additional agents unless a concrete later requirement justifies
-independent roles or a state machine.
+Single Gemini orchestrating agent, built with Google's Agent Development Kit (ADK) rather than a hand-rolled
+function-calling loop — ADK's agent/tool abstractions match this exact "one agent, explicit tools" shape and its
+built-in tracing covers a chunk of the Agent Observability phase for free. Do not add additional agents unless a
+concrete later requirement justifies independent roles or a state machine.
 
 ## GCP services and their concrete responsibility
 
@@ -78,7 +113,7 @@ independent roles or a state machine.
 | Pub/Sub | Streaming application events and ingestion signals |
 | Vertex AI Gemini | Agent reasoning, tool calling, response generation |
 | Vertex AI embeddings / vector retrieval | Semantic RAG retrieval |
-| Cloud Run | FastAPI backend + deployable web app services |
+| Cloud Run | Two services: FastAPI `backend` (public) and the ADK `agents` service (private, invoker-restricted to `backend`) |
 | Cloud Functions | One small event-triggered ingestion responsibility |
 | Artifact Registry | Container images |
 | Secret Manager | Runtime secrets/configuration |
@@ -94,3 +129,7 @@ description.
 Record deviations from the source plan here as they happen, with rationale and date.
 
 - _2026-09-21_ — Repository scaffolding created; no architectural deviations yet.
+- _2026-09-21_ — Agent runtime moved out of `backend/src/agents/` to a root-level `agents/` directory, built on
+  Google ADK, deployed as its own private Cloud Run service rather than living inside the FastAPI process. See
+  "Service topology" above for the resulting shape and rationale. Deviates from the plan's single-Cloud-Run-box
+  diagram; kept BigQuery-as-governance-authority and controlled-tool-access principles unchanged.

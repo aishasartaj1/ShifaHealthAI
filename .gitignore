@@ -20,8 +20,8 @@ build/
 *.tfstate
 *.tfstate.*
 *.tfplan
-.terraform.lock.hcl
 terraform.tfvars
+# NOTE: .terraform.lock.hcl is intentionally NOT ignored — it pins provider versions and should be committed.
 
 # Secrets / env
 .env

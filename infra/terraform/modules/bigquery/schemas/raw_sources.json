@@ -1,0 +1,7 @@
+[
+  { "name": "source_id", "type": "STRING", "mode": "REQUIRED", "description": "Identifies the source organization/document." },
+  { "name": "source_name", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_type", "type": "STRING", "mode": "REQUIRED", "description": "e.g. government, professional_medical_org, nonprofit_health_system." },
+  { "name": "url", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_status", "type": "STRING", "mode": "REQUIRED", "description": "ACTIVE or INACTIVE — one of the governance-gate inputs." }
+]

@@ -114,10 +114,27 @@ terraform plan
 terraform apply
 ```
 
-Requires `gcloud auth application-default login` once, so Terraform's Google provider can authenticate.
-`terraform apply` enables the GCP APIs required by later phases (Cloud Run, BigQuery, Pub/Sub, Dataflow, Vertex
-AI, etc.) on the target project — it does not yet provision any billable resources (no Cloud Run services,
-buckets, or datasets exist until their respective phases land).
+Requires `gcloud auth application-default login` once, so Terraform's Google provider can authenticate. If ADC's
+quota project doesn't match your target project, also run `gcloud auth application-default set-quota-project
+<project_id>` — otherwise Python client libraries (e.g. `seed_bigquery.py` below) will get a 403 billing against
+the wrong project.
+
+`terraform apply` enables the required GCP APIs and provisions the `raw`/`curated`/`semantic` BigQuery datasets
+plus the `raw` layer's 4 tables (`raw_topics`, `raw_sources`, `raw_knowledge`, `raw_reviews`). It does not yet
+provision Cloud Run, Storage, or Pub/Sub resources — those land in their respective phases.
+
+### Seed data (Phase 2)
+
+```bash
+cd backend && .venv/Scripts/pip install -r ../scripts/requirements.txt   # or use scripts/ own venv
+cd ..
+python scripts/validate_seed_data.py           # schema/referential-integrity check, no GCP calls
+python scripts/seed_bigquery.py --project shifahealthai
+```
+
+`data/seed/` holds 6 topics and 38 knowledge records (synthetic educational summaries, each citing a real public
+source — see [docs/DEVLOG.md](docs/DEVLOG.md) for the sourcing approach). `ai_eligible` is intentionally not in
+this seed data — it's a governance flag computed downstream by the Phase 3 Dataflow job, not authored by hand.
 
 ## Live demo
 

@@ -1,0 +1,36 @@
+{
+  "_comment": "Agent-side safety configuration, authored for this demo (not loaded into BigQuery). Consumed by the agents/ ADK service in Phase 5 to keep responses educational-only and to catch situations that need a human, not a generated answer.",
+
+  "educational_disclaimer": "This is educational information, not a diagnosis, treatment plan, or personalized medical advice. If you're experiencing a medical emergency, contact your local emergency number.",
+
+  "out_of_scope_intents": [
+    "diagnosis",
+    "treatment_recommendation",
+    "medication_dosing",
+    "personalized_medical_advice"
+  ],
+  "out_of_scope_response": "I can share general educational information on this topic, but I can't provide a diagnosis, treatment plan, or medication guidance. Please talk with a qualified healthcare provider about your specific situation.",
+
+  "escalation_keywords": [
+    "suicidal",
+    "suicide",
+    "self-harm",
+    "want to die",
+    "chest pain",
+    "can't breathe",
+    "cannot breathe",
+    "severe bleeding",
+    "heavy bleeding soaking",
+    "passed out",
+    "unconscious",
+    "was assaulted",
+    "sexual assault"
+  ],
+  "escalation_response": "This sounds like it could be an emergency or something that needs immediate, in-person attention. Please contact your local emergency number or go to the nearest emergency room now. If this is a mental health crisis, in the US you can call or text 988 (Suicide & Crisis Lifeline).",
+
+  "minimum_governance_requirements": {
+    "review_status": "APPROVED",
+    "source_status": "ACTIVE",
+    "content_status": "CURRENT"
+  }
+}

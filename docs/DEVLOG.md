@@ -125,3 +125,78 @@ supposed to be committed (only `.terraform/`, `*.tfstate`, and `terraform.tfvars
 now fully done; backlog's "Next action" points at Phase 2 (data model / seed data).
 
 ---
+
+## 2026-09-21 — Phase 2: seed data, `bigquery` Terraform module, load into BigQuery
+
+**What:** Authored the seed dataset and loaded it into the real `shifahealthai` project:
+- 6 topics (`data/seed/health_topics.csv`): menstrual cycles, PCOS, menopause, contraception, pregnancy
+  education, cervical health/screening — one from each of the plan's Section 3 domain branches that had
+  reasonably self-contained public source material.
+- 9 sources (`sources.csv`), each a **real, verified-via-web-search** public-health page — Office on Women's
+  Health, ACOG, NIA/NIH, CDC, MedlinePlus — with the actual title and URL, not guessed ones.
+- 38 knowledge records (`knowledge_metadata.csv`), each a short educational summary **paraphrased in my own
+  words** from what the source search results returned, not copy-pasted — plus governance fields
+  (`review_status`, `content_status`, `published_date`, `last_reviewed_date`, `content_version`).
+- 38 matching review rows (`medical_reviews.csv`) with synthetic reviewer role labels (e.g. "OB/GYN Reviewer
+  (Synthetic)") — explicitly fake reviewer identities, since real named reviewers would misrepresent who
+  actually touched this content.
+- `safety_rules.json`: agent-side config (disclaimer text, out-of-scope intents, escalation keywords for
+  self-harm/emergency situations) — authored now per the plan's file list, consumed later in Phase 5.
+- `infra/terraform/modules/bigquery/`: `raw`/`curated`/`semantic` datasets, and the 4 `raw` tables with JSON
+  schema files matching the CSVs. Wired into the dev environment as a module, planned, and applied — verified
+  with `bq ls` that the datasets/tables exist on the real project.
+- `scripts/validate_seed_data.py` (+ a pytest wrapper): stdlib-only schema/enum/foreign-key/date validation over
+  the CSVs, run before any load.
+- `scripts/seed_bigquery.py`: validates, then loads each CSV into its `raw.*` table with `WRITE_TRUNCATE` (safe
+  to re-run after editing seed data). Ran it for real; verified row counts and the governance-status distribution
+  with `bq query`.
+
+**Why:**
+- Sources were found via `WebSearch` rather than recalled from memory or guessed, specifically to avoid citing a
+  URL that doesn't exist or misattributing content to the wrong org — both would undermine the entire point of
+  a "governed" knowledge platform.
+- Summaries are paraphrased, not copied, because the plan explicitly says not to present scraped third-party text
+  as proprietary content, and because verbatim reproduction of another org's page text raises copyright concerns
+  a portfolio project doesn't need to take on.
+- **Five records were deliberately seeded as governance failures** (2 `STALE`, 1 `EXPIRED`, 2 `NEEDS_REVIEW`) —
+  spread across different topics rather than clustered in one, and assigned independently of whether the real
+  source page is actually still active (all 9 real sources are, in fact, live and current — the fictional part is
+  our *internal* review workflow status, not a claim about the external org's page). Without this, every later
+  governance/eligibility demo (Phase 4's query-time filter, the admin console's governance view, the
+  data-quality "AI eligibility %" metric) would have nothing real to show — a pipeline that always approves
+  everything doesn't prove the governance layer does anything.
+- `ai_eligible` stayed out of the raw schema on purpose (see the Phase 1 entry above where this was first
+  decided) — it's `review_status==APPROVED AND source_status==ACTIVE AND content_status==CURRENT`, and that
+  computation belongs to Phase 3's Dataflow job, not to hand-authored seed data. `validate_seed_data.py` prints a
+  preview count (33/38 eligible) so a badly-skewed seed set would be caught now, but it does not write that flag
+  anywhere.
+- Only `raw.*` tables got schemas in Terraform. `curated.*`/`semantic.*` are datasets-only for now; defining their
+  table schemas before Phase 3's transform logic exists would mean designing the dimensional model backwards
+  from a guess instead of from the actual join/aggregation logic.
+- Hit a real permissions snag applying `seed_bigquery.py`: the `google-cloud-bigquery` Python client used the
+  ADC "quota project" for billing/permission checks, which was still set to an unrelated project
+  (`bq-verse-sandbox-052025`) from prior work on this machine — even though `bigquery.Client(project=...)` was
+  correctly pointed at `shifahealthai`. Fixed with `gcloud auth application-default set-quota-project
+  shifahealthai`, which only edits the local ADC credentials file, not the gcloud CLI's active project config
+  (a different, unrelated setting) — so it didn't disturb whatever project other gcloud work on this machine
+  is using.
+
+**Deviations from the plan:** None beyond the agents/service-topology one already logged in `architecture.md`.
+Phase 2's scope (raw tables + seed load only, curated/semantic schemas deferred) is a scoping choice within the
+plan, not a deviation from it — the plan doesn't specify when each layer's schema gets written, only that all
+three layers exist by the MVP.
+
+**Interview notes:**
+- Be able to name the actual sources cited (Office on Women's Health, ACOG, NIA/NIH, CDC, MedlinePlus) and why
+  they were chosen (all US federal or major professional-medical-org sources, appropriate for general
+  educational content — not needed to be exhaustive, needed to be credible).
+- Be ready to explain *why* 5 records are deliberately non-eligible and point to exactly which ones and why
+  (`know_mc_007`, `know_pcos_006`, `know_meno_006`, `know_preg_006`, `know_cerv_006`) — this is the kind of detail
+  that separates "I understand governance" from "I can recite the word governance."
+- `ai_eligible` not existing yet is a feature of the current state, not a bug — but know where it will live
+  before it's asked as a caught-out question: computed in Phase 3, written to `semantic.agent_eligible_knowledge`,
+  re-validated again at query time per `docs/governance.md`'s "Enforcement points."
+- ADC quota project vs. gcloud CLI active project are two different pieces of local state that can silently
+  disagree — worth understanding the difference rather than memorizing the fix command.
+
+---

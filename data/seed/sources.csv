@@ -1,0 +1,10 @@
+source_id,source_name,source_type,url,source_status
+src_owh_cycle,Office on Women's Health (OASH / U.S. HHS),government,https://womenshealth.gov/menstrual-cycle/your-menstrual-cycle,ACTIVE
+src_owh_pms,Office on Women's Health (OASH / U.S. HHS),government,https://womenshealth.gov/menstrual-cycle/premenstrual-syndrome,ACTIVE
+src_mayo_cycle,Mayo Clinic,nonprofit_health_system,https://www.mayoclinic.org/healthy-lifestyle/womens-health/in-depth/menstrual-cycle/art-20047186,ACTIVE
+src_acog_pcos,American College of Obstetricians and Gynecologists (ACOG),professional_medical_org,https://www.acog.org/womens-health/faqs/polycystic-ovary-syndrome-pcos,ACTIVE
+src_nia_menopause,National Institute on Aging (NIH),government,https://www.nia.nih.gov/health/menopause/what-menopause,ACTIVE
+src_cdc_contraception,Centers for Disease Control and Prevention (CDC),government,https://www.cdc.gov/contraception/about/index.html,ACTIVE
+src_acog_ec,American College of Obstetricians and Gynecologists (ACOG),professional_medical_org,https://www.acog.org/womens-health/faqs/emergency-contraception,ACTIVE
+src_medlineplus_prenatal,MedlinePlus (NIH / National Library of Medicine),government,https://medlineplus.gov/prenatalcare.html,ACTIVE
+src_cdc_cervical,Centers for Disease Control and Prevention (CDC),government,https://www.cdc.gov/cervical-cancer/screening/index.html,ACTIVE

@@ -1,0 +1,39 @@
+review_id,knowledge_id,reviewer_role,review_date,review_status,notes
+rev_mc_001,know_mc_001,OB/GYN Reviewer (Synthetic),2025-11-03,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_mc_002,know_mc_002,Women's Health Nurse Practitioner (Synthetic),2025-12-10,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_mc_003,know_mc_003,Clinical Content Reviewer (Synthetic),2025-12-10,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_mc_004,know_mc_004,OB/GYN Reviewer (Synthetic),2025-11-03,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_mc_005,know_mc_005,Women's Health Nurse Practitioner (Synthetic),2026-01-20,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_mc_006,know_mc_006,Clinical Content Reviewer (Synthetic),2026-01-20,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_mc_007,know_mc_007,OB/GYN Reviewer (Synthetic),2024-06-01,NEEDS_REVIEW,Flagged for re-review: cycle-tracking guidance should be checked against latest source content.
+rev_pcos_001,know_pcos_001,Women's Health Nurse Practitioner (Synthetic),2025-10-15,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_pcos_002,know_pcos_002,Clinical Content Reviewer (Synthetic),2025-10-15,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_pcos_003,know_pcos_003,OB/GYN Reviewer (Synthetic),2025-10-15,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_pcos_004,know_pcos_004,Women's Health Nurse Practitioner (Synthetic),2025-10-15,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_pcos_005,know_pcos_005,Clinical Content Reviewer (Synthetic),2025-10-15,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_pcos_006,know_pcos_006,OB/GYN Reviewer (Synthetic),2023-05-01,APPROVED,Content flagged stale: treatment-approach guidance should be refreshed against current ACOG guidance.
+rev_meno_001,know_meno_001,Women's Health Nurse Practitioner (Synthetic),2025-09-18,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_meno_002,know_meno_002,Clinical Content Reviewer (Synthetic),2025-09-18,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_meno_003,know_meno_003,OB/GYN Reviewer (Synthetic),2025-09-18,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_meno_004,know_meno_004,Women's Health Nurse Practitioner (Synthetic),2025-09-18,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_meno_005,know_meno_005,Clinical Content Reviewer (Synthetic),2025-09-18,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_meno_006,know_meno_006,OB/GYN Reviewer (Synthetic),2022-08-01,EXPIRED,Review window expired; needs re-review before further use as agent context.
+rev_contra_001,know_contra_001,Women's Health Nurse Practitioner (Synthetic),2026-02-14,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_contra_002,know_contra_002,Clinical Content Reviewer (Synthetic),2026-02-14,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_contra_003,know_contra_003,OB/GYN Reviewer (Synthetic),2026-02-14,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_contra_004,know_contra_004,Women's Health Nurse Practitioner (Synthetic),2025-12-01,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_contra_005,know_contra_005,Clinical Content Reviewer (Synthetic),2025-12-01,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_contra_006,know_contra_006,OB/GYN Reviewer (Synthetic),2026-02-14,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_contra_007,know_contra_007,Women's Health Nurse Practitioner (Synthetic),2026-02-14,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_preg_001,know_preg_001,Clinical Content Reviewer (Synthetic),2025-10-05,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_preg_002,know_preg_002,OB/GYN Reviewer (Synthetic),2025-10-05,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_preg_003,know_preg_003,Women's Health Nurse Practitioner (Synthetic),2025-10-05,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_preg_004,know_preg_004,Clinical Content Reviewer (Synthetic),2025-10-05,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_preg_005,know_preg_005,OB/GYN Reviewer (Synthetic),2025-10-05,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_preg_006,know_preg_006,Women's Health Nurse Practitioner (Synthetic),2024-09-01,NEEDS_REVIEW,Flagged for re-review: safety-sensitive warning-signs content held for extra scrutiny before re-approval.
+rev_cerv_001,know_cerv_001,Clinical Content Reviewer (Synthetic),2026-03-01,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_cerv_002,know_cerv_002,OB/GYN Reviewer (Synthetic),2026-03-01,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_cerv_003,know_cerv_003,Women's Health Nurse Practitioner (Synthetic),2026-03-01,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_cerv_004,know_cerv_004,Clinical Content Reviewer (Synthetic),2026-03-01,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_cerv_005,know_cerv_005,OB/GYN Reviewer (Synthetic),2026-03-01,APPROVED,Reviewed against current source guidance; no changes needed.
+rev_cerv_006,know_cerv_006,Women's Health Nurse Practitioner (Synthetic),2022-11-01,APPROVED,Content flagged stale: age-based screening cutoff should be checked against current guideline updates.

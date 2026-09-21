@@ -1,0 +1,12 @@
+[
+  { "name": "knowledge_id", "type": "STRING", "mode": "REQUIRED", "description": "Stable business identifier used across BigQuery and retrieval indexes." },
+  { "name": "topic_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "source_id", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "title", "type": "STRING", "mode": "REQUIRED" },
+  { "name": "summary", "type": "STRING", "mode": "REQUIRED", "description": "Educational summary, paraphrased from the source — never the source's full/verbatim text." },
+  { "name": "review_status", "type": "STRING", "mode": "REQUIRED", "description": "APPROVED / NEEDS_REVIEW / EXPIRED." },
+  { "name": "content_status", "type": "STRING", "mode": "REQUIRED", "description": "CURRENT / STALE." },
+  { "name": "published_date", "type": "DATE", "mode": "REQUIRED" },
+  { "name": "last_reviewed_date", "type": "DATE", "mode": "REQUIRED" },
+  { "name": "content_version", "type": "INTEGER", "mode": "REQUIRED" }
+]

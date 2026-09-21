@@ -57,12 +57,12 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Terraform: base provider/backend config (`infra/terraform/environments/dev/backend.tf`, `main.tf`, `variables.tf`, `outputs.tf`, `terraform.tfvars.example`)
 - [x] `.env.example` for backend and frontend (no real secrets)
 
-### Phase 2 — Data model
-- [ ] Seed data: `data/seed/health_topics.csv`, `sources.csv`, `knowledge_metadata.csv`, `medical_reviews.csv`, `safety_rules.json` (synthetic/public only, 5–8 topics)
-- [ ] Terraform `bigquery` module: dataset + table definitions for raw/curated/semantic layers
-- [ ] `scripts/seed_bigquery.py`: load seed data into `raw.*`
-- [ ] Governance fields present and enforced in schema: `review_status`, `source_status`, `content_status`, `ai_eligible`, `content_version`
-- [ ] Tests: seed data validates against schema before load
+### Phase 2 — Data model — **done** (2026-09-21)
+- [x] Seed data: `data/seed/health_topics.csv`, `sources.csv`, `knowledge_metadata.csv`, `medical_reviews.csv`, `safety_rules.json` — 6 topics, 9 real public sources, 38 knowledge records
+- [x] Terraform `bigquery` module: `raw`/`curated`/`semantic` datasets + the 4 `raw` tables (curated/semantic *tables* deferred to Phase 3, once transform logic exists — see module's `main.tf` comment); applied against `shifahealthai`
+- [x] `scripts/seed_bigquery.py`: loads seed data into `raw.*`; run against `shifahealthai`, row counts verified
+- [x] Governance fields present in raw schema: `review_status`, `source_status`, `content_status`, `content_version`. **`ai_eligible` deliberately excluded from raw** — it's a derived flag, computed by the Phase 3 Dataflow transform from the other three, not authored by hand (see DEVLOG)
+- [x] Tests: `scripts/validate_seed_data.py` + `scripts/test_validate_seed_data.py` — schema, enum, and foreign-key checks, run before any BigQuery load
 
 ### Phase 3 — Batch pipeline
 - [ ] `pipelines/batch/`: Beam/Dataflow job — schema validation, normalization, dedup, metadata enrichment, quality checks
@@ -153,5 +153,6 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Start Phase 2 (Data model): draft the seed CSVs/JSON (5–8 topics, 30–50 knowledge records, real source
-attribution pulled via web search — see DEVLOG), then the `bigquery` Terraform module and `scripts/seed_bigquery.py`.
+Start Phase 3 (Batch pipeline): a Beam/Dataflow job that reads `raw.*`, validates/normalizes, computes
+`ai_eligible` (the real transform logic Phase 2 deferred), routes invalid records to GCS quarantine, and writes
+`curated.*`/`semantic.*`. The `storage` Terraform module (raw + quarantine buckets) lands alongside it.

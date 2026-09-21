@@ -42,3 +42,11 @@ resource "google_project_service" "required" {
   service            = each.value
   disable_on_destroy = false
 }
+
+module "bigquery" {
+  source     = "../../modules/bigquery"
+  project_id = var.project_id
+  location   = var.region
+
+  depends_on = [google_project_service.required]
+}

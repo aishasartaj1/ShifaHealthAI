@@ -6,6 +6,7 @@ the only IO; rank_by_similarity is what's actually unit-tested.
 """
 
 from __future__ import annotations
+
 import math
 
 from google import genai
@@ -27,7 +28,10 @@ def rank_by_similarity(query_embedding: list[float], corpus: list[dict]) -> list
     """corpus: rows with `embedding` (list[float]) plus whatever metadata to carry through.
     Returns corpus rows (minus the raw `embedding` vector, plus `score`), sorted desc."""
     scored = [
-        {**{k: v for k, v in row.items() if k != "embedding"}, "score": cosine_similarity(query_embedding, row["embedding"])}
+        {
+            **{k: v for k, v in row.items() if k != "embedding"},
+            "score": cosine_similarity(query_embedding, row["embedding"]),
+        }
         for row in corpus
     ]
     return sorted(scored, key=lambda r: r["score"], reverse=True)

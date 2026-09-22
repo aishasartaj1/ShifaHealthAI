@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-
 from src.main import app
 from src.services.trace_store import record_trace
 

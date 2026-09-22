@@ -1,9 +1,7 @@
 import json
 
 import httpx
-
 from src.services.agent_client import AgentClient
-
 
 _RealClient = httpx.Client  # captured before any monkeypatching of httpx.Client below
 

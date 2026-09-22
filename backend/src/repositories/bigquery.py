@@ -49,7 +49,10 @@ def check_eligibility(client: bigquery.Client, project: str, knowledge_id: str) 
 
 
 def list_topics(client: bigquery.Client, project: str) -> list[dict]:
-    query = f"SELECT topic_id, topic_name, parent_category, description FROM `{project}.curated.dim_health_topic` ORDER BY topic_name"
+    query = (
+        f"SELECT topic_id, topic_name, parent_category, description "
+        f"FROM `{project}.curated.dim_health_topic` ORDER BY topic_name"
+    )
     return [dict(row) for row in client.query(query).result()]
 
 

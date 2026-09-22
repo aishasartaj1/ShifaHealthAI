@@ -11,7 +11,7 @@ user's actual health question into a table.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -61,5 +61,5 @@ def build_event(
         "rating": rating,
         "latency_ms": latency_ms,
         "source_count": source_count,
-        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "occurred_at": datetime.now(UTC).isoformat(),
     }

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from google.auth.transport import requests as google_auth_requests
-from google.cloud import bigquery
 from google.oauth2 import id_token as google_id_token
 from pydantic import BaseModel
 

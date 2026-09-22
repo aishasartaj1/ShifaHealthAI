@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-
 from src.api.chat import extract_candidate_knowledge_ids
 from src.main import app
 

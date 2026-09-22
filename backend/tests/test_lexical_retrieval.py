@@ -1,9 +1,21 @@
 from src.retrieval.lexical import rank_by_bm25
 
 CORPUS = [
-    {"knowledge_id": "pcos_1", "title": "What PCOS is", "summary": "Polycystic ovary syndrome involves insulin resistance and irregular ovulation."},
-    {"knowledge_id": "menopause_1", "title": "What menopause is", "summary": "Menopause marks the point periods have stopped permanently."},
-    {"knowledge_id": "contra_1", "title": "Contraception overview", "summary": "Birth control methods range from pills to long-acting reversible options."},
+    {
+        "knowledge_id": "pcos_1",
+        "title": "What PCOS is",
+        "summary": "Polycystic ovary syndrome involves insulin resistance and irregular ovulation.",
+    },
+    {
+        "knowledge_id": "menopause_1",
+        "title": "What menopause is",
+        "summary": "Menopause marks the point periods have stopped permanently.",
+    },
+    {
+        "knowledge_id": "contra_1",
+        "title": "Contraception overview",
+        "summary": "Birth control methods range from pills to long-acting reversible options.",
+    },
 ]
 
 

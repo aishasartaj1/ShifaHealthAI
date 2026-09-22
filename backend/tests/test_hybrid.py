@@ -2,7 +2,11 @@ from src.retrieval.hybrid import merge_and_rerank, normalize_scores
 
 
 def test_normalize_scores_min_max():
-    results = [{"knowledge_id": "a", "score": 0.0}, {"knowledge_id": "b", "score": 5.0}, {"knowledge_id": "c", "score": 10.0}]
+    results = [
+        {"knowledge_id": "a", "score": 0.0},
+        {"knowledge_id": "b", "score": 5.0},
+        {"knowledge_id": "c", "score": 10.0},
+    ]
     normalized = normalize_scores(results)
     assert normalized[0]["score"] == 0.0
     assert normalized[1]["score"] == 0.5

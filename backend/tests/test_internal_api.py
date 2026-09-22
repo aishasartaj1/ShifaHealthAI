@@ -1,7 +1,6 @@
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
-
 from src.api.internal import _verify_id_token
 from src.config import get_settings
 from src.main import app
@@ -125,7 +124,9 @@ def test_search_knowledge_route(monkeypatch):
 
 def test_find_related_topics(monkeypatch):
     fake_related = [{"topic_id": "menopause", "topic_name": "Menopause", "parent_category": "Hormonal Health"}]
-    monkeypatch.setattr("src.api.internal.repo.list_related_topics", lambda client, project, topic_id, limit: fake_related)
+    monkeypatch.setattr(
+        "src.api.internal.repo.list_related_topics", lambda client, project, topic_id, limit: fake_related
+    )
     monkeypatch.setattr("src.api.internal.repo.get_bigquery_client", lambda: object())
 
     response = client.get("/internal/topics/pcos/related", headers=HEADERS)

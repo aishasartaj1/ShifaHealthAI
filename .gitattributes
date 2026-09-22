@@ -1,0 +1,9 @@
+# Normalize line endings for new/changed text files to LF, regardless of the contributor's OS.
+# Does not rewrite already-committed file contents on its own (no history rewrite) - only affects
+# files as they're checked out/committed going forward.
+* text=auto eol=lf
+
+# Binary files - never touch line endings.
+*.png binary
+*.jpg binary
+*.ico binary

@@ -840,3 +840,66 @@ passed, in 4m38s.
   (almost always over-privileged) account first.
 
 ---
+
+## 2026-09-22 — `functions/`: the deferred Cloud Function, built and proven end-to-end
+
+**What:** Built the one Cloud Function deferred from Phase 8 — `functions/main.py`'s `on_raw_file_arrival`,
+Eventarc-triggered on `google.cloud.storage.object.v1.finalized` for the `raw` bucket, publishing a small
+structured signal (`{event_type: "RAW_FILE_ARRIVED", bucket, object_name, content_type, size_bytes,
+time_created}`) to a new Pub/Sub topic, `shifahealth-ingestion-signals`. That's the entire responsibility — no
+downstream consumer was built, deliberately: per the plan's Section 17, this exists to demonstrate event-driven
+integration, not to become a second ingestion path alongside `pipelines/batch`. The pure transformation
+(`transform.py`'s `build_ingestion_signal`) is separated from the thin, side-effecting entrypoint
+(`main.py`), the same pure-function-plus-thin-wrapper shape used everywhere else in this project
+(`extract_candidate_knowledge_ids`, `build_event`, the pipelines' `transforms.py` modules) — and for the same
+reason: the transformation is fully unit-testable without touching GCP, and the wrapper is thin enough that
+mocking one client call covers it.
+
+New `infra/terraform/modules/functions/` module: a dedicated `shifahealth-functions` service account (least
+privilege, no roles beyond what this one function needs), the function itself via
+`google_cloudfunctions2_function`, source code zipped at plan time with the `hashicorp/archive` provider (first
+use of that provider in this project) and uploaded to a dedicated source bucket — deliberately not the `raw`
+bucket itself, since uploading the function's own source there would trigger the function on every redeploy.
+
+**Two more real bugs, found only by actually applying and then actually triggering it — the same pattern as
+every deploy-adjacent phase in this project:**
+
+1. **`Permission "storage.buckets.get" denied"` on the first `terraform apply`.** Eventarc validates a GCS
+   trigger's source bucket at *creation* time by calling `storage.buckets.get` as the *trigger's own* service
+   account (`shifahealth-functions`) — a separate check from the GCS-service-agent-needs-`pubsub.publisher`
+   grant that every GCS-Eventarc-trigger guide leads with. That first grant covers Eventarc's transport;
+   this second one covers Eventarc's own validation step, and it's easy to miss because the error only
+   surfaces at `apply` time, not from reading any documentation example. Fixed with a
+   `google_storage_bucket_iam_member` granting `roles/storage.objectViewer`, scoped to just the `raw` bucket.
+2. **(Caught before deploying, not after)** the function's own Pub/Sub client had to follow
+   `backend/src/services/pubsub.py`'s lazy `@lru_cache`-wrapped-constructor pattern, not construct the
+   `PublisherClient()` at module import time — otherwise `pytest` collecting `functions/tests/` would try to
+   establish real GCP credentials just to import `main.py`. Not a bug found by deploying, but a convention
+   *carried forward* from a bug class this project already learned to avoid (see Phase 5's agent client and
+   Phase 7's `trace_store.py` for the same shape of lesson).
+
+**Verified for real, not just "it applied cleanly":** created a temporary Pub/Sub pull subscription on
+`shifahealth-ingestion-signals`, uploaded a real test file to `gs://shifahealthai-raw/e2e-test/test-arrival.json`,
+pulled the subscription, and confirmed the exact expected signal arrived (`RAW_FILE_ARRIVED`, correct bucket,
+object name, content type, size, and timestamp) — then deleted both the test file and the temporary
+subscription, leaving no residue. This is the same "actually run it, don't just trust a green `apply`" standard
+applied throughout Phase 8 and Phase 9's CI/CD debugging.
+
+**Interview notes:**
+- The Eventarc-GCS-trigger IAM story is a good, compact answer to "describe a tricky GCP permissions issue":
+  two *different* identities (the GCS service agent, and the trigger's own service account) each need a
+  *different* role (`pubsub.publisher` vs `storage.objectViewer`) for two *different* reasons (message
+  transport vs. trigger validation) — and only one of the two is mentioned in most quickstart guides.
+- Worth naming unprompted why this function does not write anywhere itself, does not call `backend`, and has no
+  consumer: every other component in this project earns its place by doing one clear job end-to-end (retrieval,
+  governance, generation); this one earns its place specifically by being *small and self-contained* — its job
+  is to exist as a second event-driven pattern (GCS finalize -> Eventarc -> Function -> Pub/Sub) distinct from
+  the interaction-event pattern (`backend` -> Pub/Sub -> Dataflow -> BigQuery) already built in Phase 7, not to
+  add another ingestion pathway that would compete with `pipelines/batch`.
+- The end-to-end verification step (temp subscription, real file upload, real pull, cleanup) is worth
+  describing as a reusable pattern in itself: it's the cheapest way to prove an event-driven GCP component
+  actually fires, versus trusting that a successful `terraform apply` means the wiring is correct — Phase 9's
+  `deploy.yml` bugs and this module's `storage.buckets.get` bug were both invisible to `terraform plan`/`apply`
+  succeeding.
+
+---

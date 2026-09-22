@@ -217,3 +217,13 @@ Record deviations from the source plan here as they happen, with rationale and d
   disagree on image tag (Terraform owns service configuration, CI owns which image is currently running); a
   future `terraform apply` touching those modules would reset the running image back to `:latest`, acceptable
   for now since it hasn't caused a real problem.
+- _2026-09-22_ — Built `functions/` (deferred from Phase 8): one Eventarc-triggered Cloud Function on the `raw`
+  bucket's `object.finalized` event, publishing a structured signal to its own Pub/Sub topic
+  (`shifahealth-ingestion-signals`) and nothing else — no downstream consumer, per Section 17's "demonstrates
+  event integration without moving core business logic out of the main pipeline." Its own Terraform module
+  (`infra/terraform/modules/functions/`) needed two service-account grants beyond the obvious
+  `pubsub.publisher`-for-the-GCS-service-agent one every quickstart mentions: `roles/eventarc.eventReceiver` for
+  the trigger's own service account, and `roles/storage.objectViewer` scoped to the `raw` bucket so that same
+  service account can pass Eventarc's `storage.buckets.get` validation check at trigger-creation time — the
+  second of the two was found only by actually running `terraform apply`, not from any setup guide. Verified
+  end-to-end (real file upload, real Pub/Sub pull, real cleanup), not just a successful `apply`.

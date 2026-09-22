@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/random"
       version = "~> 3.6"
     }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.4"
+    }
   }
 }
 
@@ -224,6 +228,16 @@ module "cloud_run_frontend" {
   # No env_vars: VITE_API_BASE_URL is baked into the built JS bundle at image-build time (a Vite
   # build-arg, see frontend/Dockerfile), not read from the environment at runtime - nginx serves
   # static files and has no notion of these values.
+
+  depends_on = [google_project_service.required]
+}
+
+module "functions" {
+  source                = "../../modules/functions"
+  project_id            = var.project_id
+  region                = var.region
+  raw_bucket_name       = module.storage.raw_bucket
+  service_account_email = module.iam.functions_service_account_email
 
   depends_on = [google_project_service.required]
 }

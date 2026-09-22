@@ -328,6 +328,28 @@ gh variable set WORKLOAD_IDENTITY_PROVIDER --body "$(terraform output -raw -stat
 gh variable set CI_SERVICE_ACCOUNT --body "$(terraform output -json cicd | jq -r .ci_service_account_email)"
 ```
 
+### Ingestion signal function
+
+`functions/main.py` is a small Cloud Function, Eventarc-triggered whenever a new object lands in the `raw`
+bucket: it publishes a structured signal (`RAW_FILE_ARRIVED` + bucket/object/content-type/size/timestamp) to the
+`shifahealth-ingestion-signals` Pub/Sub topic and does nothing else — see docs/architecture.md's decision log
+for why it deliberately has no downstream consumer. Provisioned by `infra/terraform/modules/functions/`.
+
+```bash
+cd functions
+python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt  # bash: .venv/bin/pip
+.venv/Scripts/python -m pytest
+```
+
+To see it fire for real: upload any file to the `raw` bucket and pull a subscription on the topic above.
+
+```bash
+gcloud storage cp some-file.txt gs://shifahealthai-raw/
+gcloud pubsub subscriptions create tmp-check --topic=shifahealth-ingestion-signals
+gcloud pubsub subscriptions pull tmp-check --auto-ack --limit=1
+gcloud pubsub subscriptions delete tmp-check
+```
+
 ## Live demo
 
 **https://frontend-u7f3tlft2q-uc.a.run.app**

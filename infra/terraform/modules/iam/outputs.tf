@@ -9,3 +9,7 @@ output "agents_service_account_email" {
 output "frontend_service_account_email" {
   value = google_service_account.frontend.email
 }
+
+output "functions_service_account_email" {
+  value = google_service_account.functions.email
+}

@@ -108,7 +108,7 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Tests: 14 new backend tests (event schema/route validation, including a test that a client cannot fabricate `QUESTION_ASKED`/`RESPONSE_GENERATED`), 9 new streaming-pipeline tests (validation, normalization, native-datetime handling). 100+ tests total across the repo
 - [x] **Real end-to-end verification**, not mocked: ran the actual Beam streaming pipeline against the real Pub/Sub subscription while firing real chat requests and interaction events; confirmed all 5 event types landed in `curated.fact_user_question` with correct structured fields; published two deliberately malformed messages directly to Pub/Sub and confirmed both were quarantined with accurate reasons; ran `refresh_analytics.py` and confirmed `GET /api/admin/analytics` returned the exact aggregated numbers; Playwright-verified the full browser flow (ask → source click → feedback click → related-topic click → deep-linked Topics page → Admin analytics tiles), zero console errors
 
-### Phase 8 — Platform — **mostly done** (2026-09-21); `functions/` deferred, see Next action
+### Phase 8 — Platform — **complete** (2026-09-21); `functions/` built 2026-09-22, see below
 - [x] Terraform `cloud_run` module (generic, reusable), instantiated 3x: `backend` (public), `agents` (IAM-gated, not network-gated — see below), `frontend` (public). All three **live and verified**: https://frontend-u7f3tlft2q-uc.a.run.app
 - [x] Terraform `iam` module: one service account per service, least-privilege project roles, plus the scoped `backend`-SA-\>`roles/run.invoker`-on-`agents` binding (not project-wide) — the real, IAM-enforced trust boundary from architecture.md's Service Topology
 - [x] Terraform `artifact_registry` module: one Docker repo, all three images built via Cloud Build (`gcloud builds submit`) and pushed
@@ -116,12 +116,14 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] Real caller verification for `/internal/*`: Google-issued ID token (`google.oauth2.id_token.verify_oauth2_token`), checked against `agents`' service account email, with the shared-secret header kept only as an explicit local-dev fallback. Implemented **both directions** — `agents` calling `backend`'s `/internal/*`, and `backend` calling `agents`' `/invoke` (the second direction wasn't in the original ticket wording but is exactly the same problem and was needed to make the live deployment work at all)
 - [x] Terraform `observability` module: two log-based metrics (request count, 5xx count) over Cloud Run's own request logs — deliberately no alert policies/notification channels (those need a real notification target nobody asked to create)
 - [x] Dockerfiles for `backend/`, `agents/`, `frontend/` (frontend: multi-stage, nginx, `VITE_API_BASE_URL` baked in at build time via a build ARG)
-- [ ] `functions/`: **not built this phase** — deferred to keep Phase 8 scoped to what was needed to get a live, working public deployment; see Next action
+- [x] `functions/`: one small Cloud Function (`on_raw_file_arrival`), Eventarc-triggered on `google.cloud.storage.object.v1.finalized` for the `raw` bucket, publishes a structured ingestion signal to its own Pub/Sub topic (`shifahealth-ingestion-signals`) and does nothing else — deliberately no downstream consumer, per Section 17. New `infra/terraform/modules/functions/` module: dedicated `shifahealth-functions` service account, 2nd-gen function via `google_cloudfunctions2_function`, source zipped with the `archive` provider. **Verified for real**, not just deployed: uploaded a test file to `gs://shifahealthai-raw/`, pulled a temporary Pub/Sub subscription, confirmed the exact expected signal arrived, then cleaned up both.
 
 **Three real bugs found by actually deploying, not by reasoning in advance** (full writeup in DEVLOG):
 1. `agents/requirements.txt` pinned a `fastapi` version incompatible with `google-adk`'s actual constraint — worked locally (pip had resolved a newer version there already) but failed in Cloud Build's clean install. Fixed by pinning to what was actually resolved.
 2. Guessed Cloud Run's default URL format wrong (project-number-based) — the real format uses an opaque per-project+region hash. Fixed by deriving both services' URLs from a variable (`cloud_run_url_suffix`) instead of a (wrong) formula, which also happens to be the only way to avoid a genuine circular Terraform dependency between `backend` and `agents` each needing the other's URL.
 3. `agents`' `INGRESS_TRAFFIC_INTERNAL_ONLY` silently blocked *everyone*, including `backend` itself — Cloud-Run-to-Cloud-Run internal calls need a Serverless VPC Access connector that was never set up; assumed (wrongly) it worked automatically. Fixed by switching to `INGRESS_TRAFFIC_ALL` + keeping IAM as the actual (and, it turns out, industry-standard) trust boundary.
+
+**One more real bug, found deploying `functions/`:** the Eventarc trigger validates its source bucket at creation time via `storage.buckets.get`, called as the *trigger's own* service account — separate from the GCS-service-agent Pub/Sub grant Eventarc also needs. First `terraform apply` failed with `Permission "storage.buckets.get" denied`; fixed with a `google_storage_bucket_iam_member` granting `roles/storage.objectViewer` scoped to just the `raw` bucket.
 
 ### Phase 9 — CI/CD
 - [x] `infra/terraform/modules/cicd/`: Workload Identity Federation (GitHub Actions → GCP, no service-account JSON keys) + a `shifahealth-ci` service account with deliberately narrow permissions — image push, Cloud Build trigger, Cloud Run revision deploy, `serviceAccountUser` on the 3 app SAs (scoped per-SA, not project-wide), plus read-only roles (`viewer`, `iam.securityReviewer`, `secretmanager.viewer`) so `terraform plan` in PRs gets a real diff. Deliberately **no** `terraform apply`-level roles (no `bigquery.admin`, no `resourcemanager.projectIamAdmin`) — applied via `terraform apply`, 15 resources created.
@@ -142,19 +144,19 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 
 Demo-ready when **all** of the following work end-to-end:
 
-- [ ] React assistant reachable through a live URL
-- [ ] FastAPI backend and the ADK agents service both run on Cloud Run (public + private respectively)
-- [ ] At least 5 women's-health topics and 30–50 governed knowledge records available
-- [ ] BigQuery contains raw, curated, and semantic datasets
-- [ ] Batch Dataflow pipeline transforms source data and quarantines invalid records
-- [ ] Hybrid semantic + lexical retrieval returns relevant knowledge
-- [ ] Governance filtering prevents non-eligible content from reaching generation
-- [ ] Gemini uses controlled tools and returns grounded educational answers with sources
-- [ ] Pub/Sub → Dataflow → BigQuery processes demo interaction events
-- [ ] Admin console shows data quality, governance, analytics, and agent traces
-- [ ] Terraform provisions the DEV infrastructure
-- [ ] GitHub Actions validates/tests/builds/deploys the application
-- [ ] README includes architecture, setup, live demo link, limitations, and screenshots
+- [x] React assistant reachable through a live URL
+- [x] FastAPI backend and the ADK agents service both run on Cloud Run (public + private respectively)
+- [x] At least 5 women's-health topics and 30–50 governed knowledge records available
+- [x] BigQuery contains raw, curated, and semantic datasets
+- [x] Batch Dataflow pipeline transforms source data and quarantines invalid records
+- [x] Hybrid semantic + lexical retrieval returns relevant knowledge
+- [x] Governance filtering prevents non-eligible content from reaching generation
+- [x] Gemini uses controlled tools and returns grounded educational answers with sources
+- [x] Pub/Sub → Dataflow → BigQuery processes demo interaction events
+- [x] Admin console shows data quality, governance, analytics, and agent traces
+- [x] Terraform provisions the DEV infrastructure
+- [x] GitHub Actions validates/tests/builds/deploys the application
+- [ ] README includes architecture, setup, live demo link, limitations, and screenshots — link/setup/architecture done; screenshots still outstanding (Phase 10)
 
 ## Deferred until after the core demo — Section 30
 
@@ -172,10 +174,9 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Set the two GitHub repo variables (`WORKLOAD_IDENTITY_PROVIDER`, `CI_SERVICE_ACCOUNT` — values in DEVLOG's Phase 9
-entry) and open a real PR / push a commit to `main` to exercise `pr.yml` / `deploy.yml` for the first time. After
-that: either (a) build `functions/` — one Cloud Function on the raw bucket's file-arrival event, publishing an
-ingestion-signal message (small, explicitly optional per the plan) — or (b) start Phase 10 (Polish).
+The MVP (Section 28, above) is fully satisfied except README screenshots. Remaining work: (a) test `pr.yml` for
+real by opening a PR (only `deploy.yml` has been exercised so far), or (b) Phase 10 (Polish) — retrieval
+evaluation benchmark, `scripts/generate_demo_events.py`, README screenshots.
 
 Note: `backend/src/services/trace_store.py` (agent traces) is still in-memory, not durable — that's a deliberate,
 narrower scope than it might sound: Phase 7 built durable storage for *interaction* events

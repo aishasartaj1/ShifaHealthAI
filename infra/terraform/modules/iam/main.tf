@@ -22,6 +22,12 @@ resource "google_service_account" "frontend" {
   display_name = "ShifaHealth frontend (static SPA, public ingress)"
 }
 
+resource "google_service_account" "functions" {
+  project      = var.project_id
+  account_id   = "shifahealth-functions"
+  display_name = "ShifaHealth ingestion-signal Cloud Function"
+}
+
 # backend: reads BigQuery (retrieval + admin APIs), runs embedding calls, publishes interaction
 # events. No write access to BigQuery - all writes happen through the batch/streaming pipelines,
 # run separately under the operator's own credentials, never through the running service.

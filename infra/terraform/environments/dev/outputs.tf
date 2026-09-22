@@ -44,9 +44,10 @@ output "artifact_registry_repository_url" {
 
 output "service_accounts" {
   value = {
-    backend  = module.iam.backend_service_account_email
-    agents   = module.iam.agents_service_account_email
-    frontend = module.iam.frontend_service_account_email
+    backend   = module.iam.backend_service_account_email
+    agents    = module.iam.agents_service_account_email
+    frontend  = module.iam.frontend_service_account_email
+    functions = module.iam.functions_service_account_email
   }
 }
 
@@ -64,4 +65,9 @@ output "cicd" {
     workload_identity_provider = module.cicd.workload_identity_provider
     ci_service_account_email   = module.cicd.ci_service_account_email
   }
+}
+
+output "ingestion_signal_topic" {
+  description = "Pub/Sub topic the raw-file-ingestion-signal Cloud Function publishes to."
+  value       = module.functions.ingestion_signal_topic
 }

@@ -23,6 +23,9 @@ build/
 terraform.tfvars
 # NOTE: .terraform.lock.hcl is intentionally NOT ignored — it pins provider versions and should be committed.
 
+# archive_file-generated Cloud Function source zips (infra/terraform/modules/functions/)
+**/.build/
+
 # Secrets / env
 .env
 .env.*

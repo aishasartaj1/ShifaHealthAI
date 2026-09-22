@@ -57,9 +57,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements-dev.txt
         working-directory: scripts
-      - run: pytest test_validate_seed_data.py
+      - run: pytest test_validate_seed_data.py test_eval_retrieval.py test_generate_demo_events.py
         working-directory: scripts
       - run: python validate_seed_data.py
         working-directory: scripts

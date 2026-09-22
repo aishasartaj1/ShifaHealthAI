@@ -4,9 +4,12 @@
 
 A real Dataflow streaming job runs indefinitely; for local DEV runs this accepts --run-for-seconds
 and cancels itself after that long, so it's demo-able (and testable) without needing a second
-terminal to Ctrl+C it. Runs on DirectRunner by default; pass --runner DataflowRunner
---temp-location gs://... --staging-location gs://... to submit as an actual (indefinitely-running)
-Dataflow job instead.
+terminal to Ctrl+C it. Runs on BundleBasedDirectRunner by default - Beam 2.76's actual default
+DirectRunner implementation is "Prism", which doesn't implement ReadFromPubSub (see
+docs/DEVLOG.md's Phase 7 entry); this was previously a flag callers had to remember to pass,
+which they didn't always (see Phase 10's entry), so it's the hardcoded default now. Pass
+--runner DataflowRunner --temp-location gs://... --staging-location gs://... to submit as an
+actual (indefinitely-running) Dataflow job instead.
 """
 
 from __future__ import annotations
@@ -21,7 +24,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True)
     parser.add_argument("--subscription", required=True)
-    parser.add_argument("--runner", default="DirectRunner")
+    parser.add_argument("--runner", default="BundleBasedDirectRunner")
     parser.add_argument("--region", default="us-central1")
     parser.add_argument("--run-for-seconds", type=int, default=60)
     parser.add_argument("--temp-location", default=None)

@@ -1,2 +1,4 @@
 google-cloud-bigquery==3.27.0
 google-genai==2.24.0
+google-cloud-pubsub==2.41.0
+rank-bm25==0.2.2

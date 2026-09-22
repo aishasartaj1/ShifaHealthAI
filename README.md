@@ -5,8 +5,18 @@
 **Live demo: https://frontend-u7f3tlft2q-uc.a.run.app** — Cloud Run scales to zero when idle, so the first
 request after a while may take a few seconds to cold-start.
 
-> Status: Phase 8 of 10 (Platform) — live and deployed. See [docs/BACKLOG.md](docs/BACKLOG.md) for the full
+> Status: Phase 10 of 10 (Polish) — live, deployed, CI/CD'd. See [docs/BACKLOG.md](docs/BACKLOG.md) for the full
 > implementation plan and current phase detail.
+
+## Screenshots
+
+| Assistant (grounded answer + sources) | Admin console (governance, quality, analytics) |
+|---|---|
+| ![Assistant](docs/screenshots/assistant.png) | ![Admin overview](docs/screenshots/admin-overview.png) |
+
+| Topic explorer | Governance (excluded records + why) |
+|---|---|
+| ![Topics](docs/screenshots/topics.png) | ![Governance](docs/screenshots/admin-governance.png) |
 
 ## What this is
 
@@ -258,11 +268,11 @@ python -m venv .venv
 pip install -r requirements-dev.txt
 pytest tests/ -q   # pure validation-logic tests, no GCP calls
 python run.py --project shifahealthai --subscription shifahealth-events-streaming-sub \
-  --runner BundleBasedDirectRunner --run-for-seconds 90
+  --run-for-seconds 90
 ```
 
-Use `--runner BundleBasedDirectRunner` explicitly for local runs — Beam 2.76's default local runner ("Prism")
-doesn't yet support `ReadFromPubSub`; `BundleBasedDirectRunner` is the one that does (see
+`--runner BundleBasedDirectRunner` is the script's default (not just `DirectRunner`) — Beam 2.76's actual default
+local runner ("Prism") doesn't support `ReadFromPubSub`; `BundleBasedDirectRunner` is the one that does (see
 [docs/DEVLOG.md](docs/DEVLOG.md) for how this was diagnosed).
 
 Reads `shifahealth-events-streaming-sub`, validates each event, writes valid ones to

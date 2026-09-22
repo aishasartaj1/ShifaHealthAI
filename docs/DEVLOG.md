@@ -903,3 +903,79 @@ applied throughout Phase 8 and Phase 9's CI/CD debugging.
   succeeding.
 
 ---
+
+## 2026-09-22 — Phase 10: retrieval evaluation and demo-event generation, both run for real
+
+**What:** Two Phase 10 deliverables, both built the same way everything else in this project has been:
+implemented, then actually run against the live GCP project, not just written and trusted.
+
+`scripts/eval_retrieval.py` + `scripts/retrieval_benchmark.json` (29 hand-written cases spanning all 6 topics)
+compare semantic-only, lexical-only, and hybrid retrieval by importing `backend/src/retrieval`'s real modules
+directly — evaluating a reimplementation would have been worthless. Full results and methodology are in
+`docs/rag-design.md`'s "Retrieval evaluation" section; the short version: semantic-only already hits 24/24 on
+this 33-record corpus (lexical-only: 19/24), so the honest conclusion is that hybrid's measured benefit at this
+corpus size is close to zero — its value is insurance against a larger, more repetitive future corpus, not a
+demonstrated win today. Reporting that plainly, rather than shading the numbers to make the hybrid design look
+more justified than the data supports, is itself worth being able to talk about.
+
+The governance side of the benchmark surfaced something more interesting than expected: all 5
+"governance-reject" test cases (questions phrased to closely match known-ineligible records) found the
+ineligible record **never appeared as a raw candidate at all** — not because query-time filtering caught it, but
+because `semantic.agent_eligible_knowledge` (the table both `lexical_search`'s corpus and
+`governance.fetch_currently_eligible_ids` read) is itself populated by the batch pipeline from already-governed
+rows. That's an earlier, stronger enforcement point than "generate a candidate, then filter it." It also raised
+a real question: does the query-time re-check in `governance.py` (whose own docstring describes catching
+"drift" between an index snapshot and live eligibility) actually do anything, or is it dead code exercised by
+nothing in this project?
+
+Answered by testing it directly rather than assuming either way: captured the exact row for `know_mc_001` (a
+real, currently-eligible, topically-unrelated record chosen so the test wouldn't touch anything the benchmark
+cases depend on), deleted it from `semantic.agent_eligible_knowledge` only — deliberately not from
+`semantic.knowledge_embeddings`, the separately-snapshotted vector index `scripts/build_index.py` last
+populated — reproducing exactly the "eligible when indexed, ineligible before the next query" scenario the
+docstring describes. `semantic_search` still returned it as the #1 raw candidate (stale index, unaware of the
+change); `governance.filter_eligible` cross-checked against the live `fetch_currently_eligible_ids` call and
+correctly dropped it. Restored the row immediately after, verified byte-for-byte identical to the captured
+original, corpus count back at 33. This mutation of live BigQuery data was flagged to the user before running
+(deletes are classifier-blocked by default in this environment) and explicitly approved, given it was a single
+reversible row on synthetic DEV data with no PHI.
+
+`scripts/generate_demo_events.py` publishes realistic synthetic session events (`QUESTION_ASKED` ->
+`RESPONSE_GENERATED` -> a probabilistic subset of `SOURCE_OPENED`/`RELATED_TOPIC_OPENED`/`FEEDBACK_SUBMITTED`,
+feedback skewed positive) by reusing `build_event()` directly rather than hand-rolling event dicts, so anything
+this script publishes is wire-identical to what `chat.py`/`events.py` produce in real traffic. Topic/knowledge
+references are fetched live from `semantic.agent_eligible_knowledge`, not hardcoded, so the generator can't drift
+from whatever the seed data actually contains. Run for real: 40 sessions (132 events) published, drained through
+the actual streaming pipeline, `refresh_analytics.py` re-run, and the resulting numbers confirmed live on
+`GET /api/admin/analytics` — feedback 16 up / 1 down, realistic per-topic source-open distribution across all 6
+topics, non-zero everywhere. The streaming-drain step hit the same Prism-vs-`BundleBasedDirectRunner` issue
+documented in Phase 7 (needed several drain passes since one 60s run doesn't always empty the subscription in a
+single pass) — not a new bug, just the known one recurring, which is itself a small signal that the runner flag
+should probably become the script's hardcoded default rather than something a user has to remember to pass.
+
+**One more real bug, found incidentally while adding `scripts/generate_demo_events.py`:** `pr.yml`'s
+seed-data-validation job (from Phase 9, never yet run for real) installed `scripts/requirements.txt` but then
+ran `pytest` — every other job in that workflow installs `requirements-dev.txt` instead, which is where `pytest`
+actually comes from. This job would have failed on its very first real run. Caught by reading the workflow file
+again while wiring up new test files, not by CI actually failing (since `pr.yml` still hasn't been exercised by
+a real PR) — a reminder that "written but never run" workflow steps deserve the same skepticism as any other
+unrun code in this project.
+
+**Interview notes:**
+- The retrieval-evaluation write-up is a good test of intellectual honesty under interview pressure: the
+  natural temptation after building a hybrid retrieval system is to report numbers that justify it. The
+  defensible answer here is "hybrid didn't measurably help at this corpus size, and here's the specific
+  mechanism (embedding generalization) that explains why, and here's why I'd still expect it to matter at a
+  larger, more repetitive corpus" — a claim grounded in a mechanism, not just a hope.
+- The two-enforcement-points finding (batch-pipeline exclusion vs. query-time drift-catch) is a much better
+  answer to "how does your system prevent ungoverned content from reaching generation" than a one-layer
+  description would have been — and it was only discovered because the benchmark's naive assumption (governance
+  catches candidates at query time) turned out to be incomplete, and that gap got investigated instead of
+  glossed over.
+- Worth naming explicitly why the drift test mutated live data rather than using a second, disposable dataset:
+  this project has exactly one BigQuery project throughout (DEV-only, no staging), so "test it for real" and
+  "touch the shared dataset" are the same action here. The mitigations that made it acceptable were capturing an
+  exact row backup, choosing an unrelated record, and verifying restoration byte-for-byte — not avoiding the
+  test.
+
+---

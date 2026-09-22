@@ -1,0 +1,215 @@
+[
+  {
+    "id": "mc-1",
+    "question": "Is it normal for my period to be a slightly different length every month?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_mc_001"]
+  },
+  {
+    "id": "mc-2",
+    "question": "What are the stages of the monthly cycle called?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_mc_002"]
+  },
+  {
+    "id": "mc-3",
+    "question": "My periods have become really unpredictable lately - what could that mean?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_mc_003"]
+  },
+  {
+    "id": "mc-4",
+    "question": "What is PMS and when does it typically happen?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_mc_005"]
+  },
+  {
+    "id": "pcos-1",
+    "question": "PCOS - what actually is it?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_pcos_001"]
+  },
+  {
+    "id": "pcos-2",
+    "question": "How do doctors figure out if someone has PCOS?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_pcos_003"]
+  },
+  {
+    "id": "pcos-3",
+    "question": "Can PCOS cause irregular periods?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_pcos_004"]
+  },
+  {
+    "id": "pcos-4",
+    "question": "Does PCOS affect fertility long-term?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_pcos_005"]
+  },
+  {
+    "id": "meno-1",
+    "question": "What is menopause, exactly?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_meno_001"]
+  },
+  {
+    "id": "meno-2",
+    "question": "What's the difference between perimenopause and menopause?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_meno_002"]
+  },
+  {
+    "id": "meno-3",
+    "question": "Is there anything that helps with hot flashes?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_meno_004"]
+  },
+  {
+    "id": "meno-4",
+    "question": "Does going through menopause affect my health years down the line?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_meno_005"]
+  },
+  {
+    "id": "contra-1",
+    "question": "What are my birth control options?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_contra_001"]
+  },
+  {
+    "id": "contra-2",
+    "question": "What does LARC mean?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_contra_003"]
+  },
+  {
+    "id": "contra-3",
+    "question": "What's the morning-after pill and how is it different from regular birth control?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_contra_004"]
+  },
+  {
+    "id": "contra-4",
+    "question": "Does birth control protect against STIs too?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_contra_006"]
+  },
+  {
+    "id": "preg-1",
+    "question": "Why does prenatal care matter?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_preg_001"]
+  },
+  {
+    "id": "preg-2",
+    "question": "What actually happens when I go in for a prenatal appointment?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_preg_002"]
+  },
+  {
+    "id": "preg-3",
+    "question": "What should I be eating while pregnant?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_preg_004"]
+  },
+  {
+    "id": "preg-4",
+    "question": "What should I do before I start trying to get pregnant?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_preg_005"]
+  },
+  {
+    "id": "cerv-1",
+    "question": "What are Pap and HPV tests for?",
+    "style": "lexical",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_cerv_001"]
+  },
+  {
+    "id": "cerv-2",
+    "question": "How often should I get screened for cervical cancer?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_cerv_002"]
+  },
+  {
+    "id": "cerv-3",
+    "question": "What does it mean if my screening result comes back abnormal?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_cerv_003"]
+  },
+  {
+    "id": "cerv-4",
+    "question": "If I got the HPV vaccine, do I still need regular screening?",
+    "style": "semantic",
+    "type": "grounded",
+    "expected_knowledge_ids": ["know_cerv_004"]
+  },
+  {
+    "id": "gov-1",
+    "question": "Why is it useful to track my menstrual cycle over time?",
+    "style": "lexical",
+    "type": "governance_reject",
+    "expected_knowledge_ids": [],
+    "excluded_knowledge_id": "know_mc_007",
+    "excluded_reason": "review_status=NEEDS_REVIEW"
+  },
+  {
+    "id": "gov-2",
+    "question": "What are the general approaches to managing PCOS symptoms?",
+    "style": "lexical",
+    "type": "governance_reject",
+    "expected_knowledge_ids": [],
+    "excluded_knowledge_id": "know_pcos_006",
+    "excluded_reason": "content_status=STALE"
+  },
+  {
+    "id": "gov-3",
+    "question": "How should I prepare for a conversation with my doctor about menopause?",
+    "style": "lexical",
+    "type": "governance_reject",
+    "expected_knowledge_ids": [],
+    "excluded_knowledge_id": "know_meno_006",
+    "excluded_reason": "review_status=EXPIRED"
+  },
+  {
+    "id": "gov-4",
+    "question": "What warning signs during pregnancy should I tell my provider about right away?",
+    "style": "lexical",
+    "type": "governance_reject",
+    "expected_knowledge_ids": [],
+    "excluded_knowledge_id": "know_preg_006",
+    "excluded_reason": "review_status=NEEDS_REVIEW"
+  },
+  {
+    "id": "gov-5",
+    "question": "Do I still need cervical cancer screening after age 65?",
+    "style": "lexical",
+    "type": "governance_reject",
+    "expected_knowledge_ids": [],
+    "excluded_knowledge_id": "know_cerv_006",
+    "excluded_reason": "content_status=STALE"
+  }
+]

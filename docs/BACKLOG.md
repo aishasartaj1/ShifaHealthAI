@@ -135,10 +135,11 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [ ] Test `pr.yml` for real (open a PR)
 
 ### Phase 10 — Polish
-- [ ] Retrieval evaluation: benchmark question set + expected `knowledge_id`s, semantic-vs-lexical-vs-hybrid comparison (write up in [rag-design.md](rag-design.md))
-- [ ] `scripts/generate_demo_events.py`: synthetic demo traffic for analytics screenshots
-- [ ] README: reproducible setup instructions from a clean DEV environment, live demo link, limitations, screenshots
-- [ ] Architecture docs updated to reflect what was actually built (decision log in [architecture.md](architecture.md))
+- [x] Retrieval evaluation: `scripts/retrieval_benchmark.json` (29 cases: 24 grounded + 5 governance-reject) + `scripts/eval_retrieval.py`, run for real against the live corpus. Results written up in [rag-design.md](rag-design.md): semantic-only 24/24 hit@5, lexical-only 19/24, hybrid 24/24 — at this 33-record corpus size semantic alone already saturates, so hybrid's measured value here is insurance against a larger/more-repetitive future corpus, not a demonstrated improvement now (reported honestly, not oversold). Governance testing revealed batch-pipeline-level filtering (ineligible content never becomes a retrieval candidate) is a separate, earlier enforcement point than the query-time re-check; verified the query-time check separately with a real, reversible single-row drift test (delete from `agent_eligible_knowledge` only, confirm stale-index candidate gets dropped, restore the row) — 5/5 correctly dropped, 1/1 drift case correctly caught.
+- [x] `scripts/generate_demo_events.py`: publishes realistic synthetic session events (reusing `build_event()`, the real production event-building code) to the live Pub/Sub topic. Ran for real: 40 sessions / 132 events published, drained through the real streaming pipeline (`pipelines/streaming/run.py --runner BundleBasedDirectRunner`), `refresh_analytics.py` re-run, confirmed live on `GET /api/admin/analytics`.
+- [x] README: screenshots (`docs/screenshots/`, captured via Playwright against the live demo, all 4 pages showing the real synthetic data generated this phase) — setup/live-demo-link/limitations already done in earlier phases
+- [x] Architecture docs updated to reflect what was actually built (decision log in [architecture.md](architecture.md)) — kept current throughout, not a separate pass
+- [x] Fixed a real Phase 9 bug found while touching `scripts/`: `pr.yml`'s seed-data-validation job installed `requirements.txt` (no `pytest`) but ran `pytest` — would have failed the first time `pr.yml` actually ran. Fixed to install `requirements-dev.txt` like every other job.
 
 ## MVP Definition — Section 28
 
@@ -174,9 +175,10 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-The MVP (Section 28, above) is fully satisfied except README screenshots. Remaining work: (a) test `pr.yml` for
-real by opening a PR (only `deploy.yml` has been exercised so far), or (b) Phase 10 (Polish) — retrieval
-evaluation benchmark, `scripts/generate_demo_events.py`, README screenshots.
+The MVP (Section 28) and Phase 10 (Polish) are both fully complete — every phase in this backlog is done. The
+one remaining item across the whole project: test `pr.yml` for real by opening a PR (only `deploy.yml` has
+actually been exercised so far). Everything else is optional: `functions/` is already built (Phase 8's Next
+action); no further scope is defined beyond what's in [Deferred until after the core demo](#deferred-until-after-the-core-demo--section-30).
 
 Note: `backend/src/services/trace_store.py` (agent traces) is still in-memory, not durable — that's a deliberate,
 narrower scope than it might sound: Phase 7 built durable storage for *interaction* events

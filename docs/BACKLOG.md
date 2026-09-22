@@ -31,7 +31,7 @@ ShifaHealthAI/
 ├── infra/terraform/          [x] modules/{storage,bigquery,pubsub,cloud_run,functions,artifact_registry,iam,observability}, environments/dev/
 ├── scripts/                  [x]
 ├── docs/                     [x] architecture.md, data-model.md, governance.md, rag-design.md, demo-script.md, BACKLOG.md, DEVLOG.md
-├── .github/workflows/        [x] (empty — CI added in Phase 9)
+├── .github/workflows/        [x] pr.yml + deploy.yml (Phase 9)
 ├── README.md                 [x]
 └── .gitignore                [x]
 ```
@@ -124,9 +124,12 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 3. `agents`' `INGRESS_TRAFFIC_INTERNAL_ONLY` silently blocked *everyone*, including `backend` itself — Cloud-Run-to-Cloud-Run internal calls need a Serverless VPC Access connector that was never set up; assumed (wrongly) it worked automatically. Fixed by switching to `INGRESS_TRAFFIC_ALL` + keeping IAM as the actual (and, it turns out, industry-standard) trust boundary.
 
 ### Phase 9 — CI/CD
-- [ ] `.github/workflows/`: PR pipeline — backend tests/lint, frontend tests/build, `terraform fmt`/`validate`/`plan`
-- [ ] `.github/workflows/`: main pipeline — build container(s), push to Artifact Registry, deploy DEV Cloud Run, smoke test
-- [ ] Keep infra-provisioning workflow and app-deploy workflow conceptually separate
+- [x] `infra/terraform/modules/cicd/`: Workload Identity Federation (GitHub Actions → GCP, no service-account JSON keys) + a `shifahealth-ci` service account with deliberately narrow permissions — image push, Cloud Build trigger, Cloud Run revision deploy, `serviceAccountUser` on the 3 app SAs (scoped per-SA, not project-wide), plus read-only roles (`viewer`, `iam.securityReviewer`, `secretmanager.viewer`) so `terraform plan` in PRs gets a real diff. Deliberately **no** `terraform apply`-level roles (no `bigquery.admin`, no `resourcemanager.projectIamAdmin`) — applied via `terraform apply`, 15 resources created.
+- [x] `.github/workflows/pr.yml`: backend/agents/pipelines pytest + ruff, seed-data validation (`scripts/validate_seed_data.py` + its own test), frontend `npm run lint` + `npm run build`, `terraform fmt -check`/`validate`/`plan` (auth'd via WIF, read-only)
+- [x] `.github/workflows/deploy.yml`: on push to `main` — build 3 images via `gcloud builds submit` (frontend via its existing `cloudbuild.yaml` build-arg substitution), deploy via `gcloud run deploy` per service, then smoke-test backend `/health` and frontend `/`
+- [x] Kept infra-provisioning (Terraform, manual `apply`) and app-deploy (`deploy.yml`, automatic on merge) conceptually separate — `deploy.yml` never calls `terraform apply`
+- [ ] Set `WORKLOAD_IDENTITY_PROVIDER` / `CI_SERVICE_ACCOUNT` as GitHub repo variables (blocked locally — `gh` not authenticated in this environment; values are in the Terraform `cicd` output and in DEVLOG's Phase 9 entry)
+- [ ] Test both workflows for real (open a PR, merge a commit to `main`) once the repo variables are set
 
 ### Phase 10 — Polish
 - [ ] Retrieval evaluation: benchmark question set + expected `knowledge_id`s, semantic-vs-lexical-vs-hybrid comparison (write up in [rag-design.md](rag-design.md))
@@ -168,11 +171,10 @@ Do **not** build these until the MVP above is working end-to-end, even if a phas
 
 ## Next action
 
-Either: (a) build `functions/` — one Cloud Function on the raw bucket's file-arrival event, publishing an
-ingestion-signal message (small, explicitly optional per the plan — "demonstrates event integration without
-moving core business logic out of the main pipeline") — or (b) move on to Phase 9 (CI/CD): GitHub Actions PR
-checks (backend/frontend tests, `terraform fmt`/`validate`/`plan`) and a main-branch pipeline that builds/pushes
-images and deploys, now that the manual deploy steps from Phase 8 are proven and can be scripted.
+Set the two GitHub repo variables (`WORKLOAD_IDENTITY_PROVIDER`, `CI_SERVICE_ACCOUNT` — values in DEVLOG's Phase 9
+entry) and open a real PR / push a commit to `main` to exercise `pr.yml` / `deploy.yml` for the first time. After
+that: either (a) build `functions/` — one Cloud Function on the raw bucket's file-arrival event, publishing an
+ingestion-signal message (small, explicitly optional per the plan) — or (b) start Phase 10 (Polish).
 
 Note: `backend/src/services/trace_store.py` (agent traces) is still in-memory, not durable — that's a deliberate,
 narrower scope than it might sound: Phase 7 built durable storage for *interaction* events

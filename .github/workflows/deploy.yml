@@ -1,0 +1,73 @@
+name: Deploy
+
+# Builds and deploys new Cloud Run revisions for backend/agents/frontend. Deliberately does NOT
+# run `terraform apply` here — infra changes (new services, IAM, ingress, scaling) stay a manual,
+# reviewed step (see infra/terraform/modules/cicd/main.tf's docstring and docs/DEVLOG.md's Phase 9
+# entry). This workflow only pushes new images to Artifact Registry and points the 3 existing
+# Cloud Run services at them, via the CI service account's narrow run.developer + per-SA
+# serviceAccountUser grants.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: shifahealthai
+  REGION: us-central1
+  REPO: us-central1-docker.pkg.dev/shifahealthai/shifahealth
+  BACKEND_URL: https://backend-u7f3tlft2q-uc.a.run.app
+  FRONTEND_URL: https://frontend-u7f3tlft2q-uc.a.run.app
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.CI_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build backend image
+        run: gcloud builds submit backend --tag "${REPO}/backend:${{ github.sha }}" --project "${PROJECT_ID}"
+
+      - name: Build agents image
+        run: gcloud builds submit agents --tag "${REPO}/agents:${{ github.sha }}" --project "${PROJECT_ID}"
+
+      - name: Build frontend image
+        run: |
+          gcloud builds submit frontend \
+            --config frontend/cloudbuild.yaml \
+            --substitutions "_IMAGE=${REPO}/frontend:${{ github.sha }},_VITE_API_BASE_URL=${BACKEND_URL}" \
+            --project "${PROJECT_ID}"
+
+      - name: Deploy backend
+        run: |
+          gcloud run deploy backend \
+            --image "${REPO}/backend:${{ github.sha }}" \
+            --region "${REGION}" --project "${PROJECT_ID}"
+
+      - name: Deploy agents
+        run: |
+          gcloud run deploy agents \
+            --image "${REPO}/agents:${{ github.sha }}" \
+            --region "${REGION}" --project "${PROJECT_ID}"
+
+      - name: Deploy frontend
+        run: |
+          gcloud run deploy frontend \
+            --image "${REPO}/frontend:${{ github.sha }}" \
+            --region "${REGION}" --project "${PROJECT_ID}"
+
+      - name: Smoke test backend
+        run: curl --fail --silent --show-error "${BACKEND_URL}/health"
+
+      - name: Smoke test frontend
+        run: curl --fail --silent --show-error "${FRONTEND_URL}/" > /dev/null

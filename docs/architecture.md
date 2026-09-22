@@ -207,3 +207,13 @@ Record deviations from the source plan here as they happen, with rationale and d
   `var.cloud_run_url_suffix` — a value that had to be corrected once already, since the first guess at Cloud
   Run's default URL format (project-number-based) was wrong; the real format is an opaque per-project+region
   hash, confirmed against the actual `.uri` output.
+- _2026-09-21_ (Phase 9) — CI/CD added via `infra/terraform/modules/cicd/` (Workload Identity Federation, no
+  service-account JSON keys) and two GitHub Actions workflows (`pr.yml`, `deploy.yml`). The CI service account is
+  deliberately denied any `terraform apply`-level role — it can push images, trigger Cloud Build, and deploy new
+  revisions to the 3 existing Cloud Run services (`run.developer`, not `run.admin`), plus read-only roles so
+  `terraform plan` works in PRs. `deploy.yml` never calls `terraform apply`; infra changes stay a manual,
+  reviewed step. One accepted consequence: Terraform's Cloud Run modules still declare `image = ".../*:latest"`
+  as the provisioned image, while `deploy.yml` deploys SHA-tagged images going forward — the two are allowed to
+  disagree on image tag (Terraform owns service configuration, CI owns which image is currently running); a
+  future `terraform apply` touching those modules would reset the running image back to `:latest`, acceptable
+  for now since it hasn't caused a real problem.

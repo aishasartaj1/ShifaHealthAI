@@ -726,3 +726,79 @@ to "complete" the phase checklist.
   category of action that should get a human's eyes on it before it happens, not after.
 
 ---
+
+## 2026-09-21 — Phase 9: CI/CD via GitHub Actions, keyless auth, and a deliberately narrow CI identity
+
+**What:** Two GitHub Actions workflows plus the Terraform to give them a real GCP identity.
+
+`infra/terraform/modules/cicd/` provisions Workload Identity Federation end to end: a
+`google_iam_workload_identity_pool`, an OIDC provider trusting `token.actions.githubusercontent.com` with an
+`attribute_condition` pinned to this one repo (`assertion.repository == "aishasartaj1/ShifaHealthAI"` — any
+other repo's Actions run, even under the same GitHub account, is rejected at the token-exchange step, before it
+ever reaches an API call), and a `shifahealth-ci` service account GitHub impersonates via
+`roles/iam.workloadIdentityUser`. No service-account JSON key exists anywhere — GitHub mints a short-lived OIDC
+token per workflow run, STS exchanges it for a short-lived Google access token, and that's it.
+
+The CI service account's permissions were the actual design decision here, not the WIF plumbing (which is
+mostly boilerplate once you've read the docs once): `artifactregistry.writer` and `cloudbuild.builds.editor` to
+build/push images, `run.developer` to deploy new revisions to the 3 *existing* Cloud Run services (not
+`run.admin` — CI cannot create/delete services or touch ingress/IAM/scaling), and `iam.serviceAccountUser`
+granted per-service-account via `for_each` over exactly the 3 app SAs (not a project-wide grant) so CI can
+deploy a revision that *runs as* backend/agents/frontend without being able to impersonate anything else. Then
+three read-only roles (`viewer`, `iam.securityReviewer`, `secretmanager.viewer`) exist for exactly one reason:
+so `terraform plan` in the PR workflow sees real project state and produces a meaningful diff, without granting
+any write capability. Deliberately **absent**: anything resembling `terraform apply` permissions —
+`bigquery.admin`, `resourcemanager.projectIamAdmin`, `run.admin`, etc. This is Section 23's "infrastructure
+changes and application deployments stay conceptually separate" principle made literal in IAM, not just in
+process: even if `deploy.yml` were compromised or buggy, the identity it runs as physically cannot widen its own
+permissions, touch IAM policy, or modify infrastructure Terraform doesn't already know about.
+
+`pr.yml` runs on every PR: backend/agents/pipelines pytest + backend `ruff check`, `scripts/validate_seed_data.py`
+plus its own pytest suite, frontend `npm run lint` + `npm run build`, and `terraform fmt -check` /
+`validate` / `plan` (authenticated via WIF, using only the read-only roles above). `deploy.yml` runs on push to
+`main`: builds all 3 images via `gcloud builds submit` (frontend via its existing `cloudbuild.yaml`, substituting
+`_VITE_API_BASE_URL` at build time exactly as done manually in Phase 8), deploys each via `gcloud run deploy`,
+then smoke-tests backend `/health` and frontend `/`. `agents` is deliberately not smoke-tested directly in this
+workflow — it's IAM-gated to accept calls only from `backend`'s service account (Phase 8's ingress decision), so
+its liveness is exercised indirectly through the existing chat flow, not by granting CI its own invoker binding
+just for a health check.
+
+**Deviations from the original phase-8 manual process:** the three `gcloud builds submit` / `gcloud run deploy`
+commands in `deploy.yml` are the same commands run by hand in Phase 8, now scripted — no new deploy mechanism
+was invented, just automated what was already proven to work. One real difference: Terraform's Cloud Run
+modules still declare `image = ".../backend:latest"` as the *provisioned* image, but `deploy.yml` deploys
+SHA-tagged images (`:${{ github.sha }}`) going forward. This is intentional, not drift to "fix" — Terraform owns
+service *existence and configuration* (ingress, IAM, env vars, scaling), CI owns *which image is currently
+running*, and the two are allowed to disagree on the image tag without either being wrong. A future
+`terraform apply` that touches the Cloud Run modules would reset the running image back to `:latest`; if that's
+ever undesirable, the fix is to stop tracking `image` in Terraform at all (`lifecycle { ignore_changes = [...] }`),
+not to keep the tags in sync by hand. Not built yet since it hasn't caused a real problem.
+
+**Blocked on this machine, not on the design:** `terraform apply` for the new `cicd` module was blocked by the
+local environment's auto-mode security classifier (it creates a service account plus 8 IAM bindings — flagged
+as IAM change, same category as Phase 8's ingress edit). Explicitly asked before proceeding, consistent with the
+pattern established since Phase 8; approved, applied cleanly (15 resources added, 0 destroyed). Separately,
+`gh` isn't authenticated in this environment, so the two GitHub repo variables the workflows read
+(`WORKLOAD_IDENTITY_PROVIDER`, `CI_SERVICE_ACCOUNT` — values below) still need to be set by hand via `gh auth
+login` or the repo's Settings → Secrets and variables → Actions → Variables page, and neither workflow has been
+exercised for real yet (no PR opened, no commit pushed to `main` since these were added).
+
+```
+WORKLOAD_IDENTITY_PROVIDER = projects/718998936108/locations/global/workloadIdentityPools/github-actions-pool/providers/github-actions-provider
+CI_SERVICE_ACCOUNT         = shifahealth-ci@shifahealthai.iam.gserviceaccount.com
+```
+
+**Interview notes:**
+- The strongest thing to say about this phase isn't "I set up GitHub Actions" — it's *why* the CI service
+  account has the specific 8 roles it has and not more. Being able to name, unprompted, the one role
+  deliberately withheld (`run.admin`, or any `terraform apply`-capable role) and explain what attack it
+  prevents is a much better signal than listing what CI *can* do.
+- `attribute_condition` on the WIF provider is the detail worth remembering over the rest of the WIF plumbing:
+  without it, any repository under the GitHub identity federated into this pool could request a token for the
+  same service account. It's a one-line config that's easy to skip and is exactly the kind of thing that looks
+  fine in a demo and is wrong in production.
+- The Terraform-vs-CI image-tag divergence (previous section) is a good example of a deliberate, documented
+  inconsistency rather than a bug — worth being able to explain *why* it's fine, since "your two systems disagree
+  about the state of the world" usually is a red flag, just not here.
+
+---

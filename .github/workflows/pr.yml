@@ -1,0 +1,104 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+        working-directory: backend
+      - run: ruff check src tests
+        working-directory: backend
+      - run: pytest
+        working-directory: backend
+
+  agents-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+        working-directory: agents
+      - run: pytest
+        working-directory: agents
+
+  pipelines-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        pipeline: [batch, streaming]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements-dev.txt
+        working-directory: pipelines/${{ matrix.pipeline }}
+      - run: pytest
+        working-directory: pipelines/${{ matrix.pipeline }}
+
+  seed-data-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+        working-directory: scripts
+      - run: pytest test_validate_seed_data.py
+        working-directory: scripts
+      - run: python validate_seed_data.py
+        working-directory: scripts
+
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  terraform-plan:
+    runs-on: ubuntu-latest
+    env:
+      TF_VAR_project_id: shifahealthai
+      TF_VAR_cloud_run_url_suffix: u7f3tlft2q-uc
+    steps:
+      - uses: actions/checkout@v4
+      - run: terraform fmt -check -recursive
+        working-directory: infra/terraform
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.CI_SERVICE_ACCOUNT }}
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+      - run: terraform init
+        working-directory: infra/terraform/environments/dev
+      - run: terraform validate
+        working-directory: infra/terraform/environments/dev
+      - run: terraform plan
+        working-directory: infra/terraform/environments/dev

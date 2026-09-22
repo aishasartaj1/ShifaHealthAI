@@ -308,6 +308,26 @@ project doesn't have — found by deploying and testing, not anticipated in adva
 module-output references — that's a genuine circular dependency. `var.cloud_run_url_suffix` breaks it: see
 `infra/terraform/environments/dev/variables.tf` for how to determine this value for a fresh project/region.
 
+### CI/CD (Phase 9)
+
+`.github/workflows/pr.yml` runs on every PR: backend/agents/pipelines tests + lint, seed-data validation,
+frontend build, and a read-only `terraform plan`. `.github/workflows/deploy.yml` runs on push to `main`: builds
+all 3 images and deploys them to the existing Cloud Run services — it never runs `terraform apply`, so
+infrastructure changes stay a manual, reviewed step separate from application deploys.
+
+Both workflows authenticate to GCP via Workload Identity Federation (`infra/terraform/modules/cicd/`) — no
+service-account JSON key is stored in GitHub. The CI service account (`shifahealth-ci`) is deliberately scoped
+to image push + Cloud Build + Cloud Run *revision* deploy (not `run.admin`) plus read-only roles for `plan`; it
+cannot create/delete services, touch IAM/ingress, or run `terraform apply`.
+
+To wire a fork/fresh clone up: `terraform apply` the `cicd` module, then set its two outputs as GitHub repo
+variables (Settings -> Secrets and variables -> Actions -> Variables):
+
+```bash
+gh variable set WORKLOAD_IDENTITY_PROVIDER --body "$(terraform output -raw -state=... cicd.workload_identity_provider)"
+gh variable set CI_SERVICE_ACCOUNT --body "$(terraform output -json cicd | jq -r .ci_service_account_email)"
+```
+
 ## Live demo
 
 **https://frontend-u7f3tlft2q-uc.a.run.app**

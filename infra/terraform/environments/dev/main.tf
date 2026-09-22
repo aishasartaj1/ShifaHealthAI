@@ -38,6 +38,8 @@ locals {
     "logging.googleapis.com",          # observability
     "monitoring.googleapis.com",       # observability
     "eventarc.googleapis.com",         # GCS-triggered Cloud Function (2nd gen)
+    "iamcredentials.googleapis.com",   # Workload Identity Federation token exchange (GitHub Actions CI/CD)
+    "sts.googleapis.com",              # Workload Identity Federation token exchange
   ]
 }
 
@@ -222,6 +224,19 @@ module "cloud_run_frontend" {
   # No env_vars: VITE_API_BASE_URL is baked into the built JS bundle at image-build time (a Vite
   # build-arg, see frontend/Dockerfile), not read from the environment at runtime - nginx serves
   # static files and has no notion of these values.
+
+  depends_on = [google_project_service.required]
+}
+
+module "cicd" {
+  source            = "../../modules/cicd"
+  project_id        = var.project_id
+  github_repository = "aishasartaj1/ShifaHealthAI"
+  app_service_account_emails = [
+    module.iam.backend_service_account_email,
+    module.iam.agents_service_account_email,
+    module.iam.frontend_service_account_email,
+  ]
 
   depends_on = [google_project_service.required]
 }

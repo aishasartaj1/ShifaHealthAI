@@ -57,3 +57,11 @@ output "service_urls" {
     frontend = module.cloud_run_frontend.url
   }
 }
+
+output "cicd" {
+  description = "Values GitHub Actions needs (set as repo variables: WORKLOAD_IDENTITY_PROVIDER, CI_SERVICE_ACCOUNT)."
+  value = {
+    workload_identity_provider = module.cicd.workload_identity_provider
+    ci_service_account_email   = module.cicd.ci_service_account_email
+  }
+}

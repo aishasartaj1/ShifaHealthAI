@@ -128,8 +128,9 @@ prerequisites exist, not strictly after the previous phase's polish is finished.
 - [x] `.github/workflows/pr.yml`: backend/agents/pipelines pytest + ruff, seed-data validation (`scripts/validate_seed_data.py` + its own test), frontend `npm run lint` + `npm run build`, `terraform fmt -check`/`validate`/`plan` (auth'd via WIF, read-only)
 - [x] `.github/workflows/deploy.yml`: on push to `main` — build 3 images via `gcloud builds submit` (frontend via its existing `cloudbuild.yaml` build-arg substitution), deploy via `gcloud run deploy` per service, then smoke-test backend `/health` and frontend `/`
 - [x] Kept infra-provisioning (Terraform, manual `apply`) and app-deploy (`deploy.yml`, automatic on merge) conceptually separate — `deploy.yml` never calls `terraform apply`
-- [ ] Set `WORKLOAD_IDENTITY_PROVIDER` / `CI_SERVICE_ACCOUNT` as GitHub repo variables (blocked locally — `gh` not authenticated in this environment; values are in the Terraform `cicd` output and in DEVLOG's Phase 9 entry)
-- [ ] Test both workflows for real (open a PR, merge a commit to `main`) once the repo variables are set
+- [x] Set `WORKLOAD_IDENTITY_PROVIDER` / `CI_SERVICE_ACCOUNT` as GitHub repo variables (`gh auth login` completed after initially being blocked, then `gh variable set` for both)
+- [x] Tested `deploy.yml` for real by pushing to `main` — found and fixed **two more real permission gaps**, both only discoverable by actually running the build under the narrow CI identity (see DEVLOG's Phase 9 entry): `gcloud builds submit`'s GCS staging-bucket upload needs `storage.objectAdmin` on `<project>_cloudbuild`, and Cloud Build's default runtime service account (the project's default Compute Engine SA) needs `iam.serviceAccountUser` granted to the submitting identity. Full pipeline (build 3 images, deploy 3 services, smoke test) went green in 4m38s after both fixes.
+- [ ] Test `pr.yml` for real (open a PR)
 
 ### Phase 10 — Polish
 - [ ] Retrieval evaluation: benchmark question set + expected `knowledge_id`s, semantic-vs-lexical-vs-hybrid comparison (write up in [rag-design.md](rag-design.md))

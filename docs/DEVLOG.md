@@ -801,4 +801,42 @@ CI_SERVICE_ACCOUNT         = shifahealth-ci@shifahealthai.iam.gserviceaccount.co
   inconsistency rather than a bug — worth being able to explain *why* it's fine, since "your two systems disagree
   about the state of the world" usually is a red flag, just not here.
 
+**Update, same day — `deploy.yml` run for real, two more permission gaps found:** `gh` got authenticated (it
+wasn't when this phase was first written), the two repo variables were set, and the push from earlier in this
+phase triggered `deploy.yml` for the first time. It failed twice, in sequence, on genuinely new permission
+errors — the same "can't be found by reading the code, only by running it" pattern as Phase 8's three bugs, and
+for the identical underlying reason: **Phase 8's manual `gcloud builds submit`/`gcloud run deploy` commands were
+run under a personal GCP identity that already had broad project access, so permission gaps that only affect a
+narrowly-scoped service account never had a chance to surface until CI actually used one.**
+
+1. **`storage.objects.create` denied on `shifahealthai_cloudbuild`.** `gcloud builds submit` doesn't send source
+   straight to Cloud Build — it first uploads a tarball of the local directory to Cloud Build's own auto-created
+   GCS staging bucket (`<project>_cloudbuild`), then references that object when starting the build.
+   `roles/cloudbuild.builds.editor` covers triggering and watching builds; it says nothing about this upload
+   step, which is a plain GCS write. Fixed with a `google_storage_bucket_iam_member` granting
+   `roles/storage.objectAdmin` scoped to that one bucket only.
+2. **`PERMISSION_DENIED: caller does not have permission to act as service account
+   ...-compute@developer.gserviceaccount.com`.** No `--service-account` flag was passed to `gcloud builds
+   submit`, so Cloud Build defaulted to running the build as the project's default Compute Engine service
+   account — and GCP separately requires the *submitting* identity to hold `iam.serviceAccountUser` on whatever
+   service account a build will run as, independent of `cloudbuild.builds.editor`. Fixed with a
+   `google_service_account_iam_member` granting `roles/iam.serviceAccountUser` on that one default SA (looked up
+   via the `google_compute_default_service_account` data source, not hardcoded, so it doesn't quietly break if
+   the project number ever needs to change).
+
+Both fixes are additive IAM grants scoped to one specific resource each (one bucket, one service account) — no
+change to the deliberate absence of `terraform apply`-level permissions from the Phase 9 design above. After
+both applied, `deploy.yml` went fully green: all 3 images built, all 3 services redeployed, both smoke tests
+passed, in 4m38s.
+
+**Interview notes (addendum):**
+- This is a clean, concrete answer to "tell me about a time your IAM permissions were wrong" that's distinct
+  from Phase 8's ingress bug: that one was a *design* misunderstanding (assuming same-project Cloud Run calls
+  are automatically "internal"); these two are *incomplete grants* — permissions that look sufficient by role
+  name (`cloudbuild.builds.editor` sounds like it should cover "submit a build") but don't cover an adjacent
+  step (uploading the source, acting as the runtime SA) that a broader personal identity was masking.
+- The general lesson worth stating explicitly: the right way to validate a CI service account's permissions is
+  to actually run the pipeline as that identity, not to reason from role names or test manually under your own
+  (almost always over-privileged) account first.
+
 ---

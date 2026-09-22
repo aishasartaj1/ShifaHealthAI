@@ -11,6 +11,10 @@
 # entry for the reasoning. roles/viewer is granted for `terraform plan`'s read access (so PRs get
 # a real plan diff), not for any write capability.
 
+data "google_compute_default_service_account" "default" {
+  project = var.project_id
+}
+
 resource "google_iam_workload_identity_pool" "github" {
   project                   = var.project_id
   workload_identity_pool_id = "github-actions-pool"
@@ -61,6 +65,29 @@ resource "google_project_iam_member" "ci_cloudbuild_editor" {
   project = var.project_id
   role    = "roles/cloudbuild.builds.editor"
   member  = "serviceAccount:${google_service_account.ci.email}"
+}
+
+# `gcloud builds submit` uploads the local source as a tarball to Cloud Build's own staging
+# bucket (<project_id>_cloudbuild) BEFORE the build itself starts - cloudbuild.builds.editor
+# above covers triggering/watching the build, not this upload step, which is a separate GCS
+# permission. Found only by actually running deploy.yml under this narrower CI identity (Phase 8's
+# manual `gcloud builds submit` ran under a personal account that already had broad access, so
+# this gap never surfaced there). Scoped to just this one bucket, not project-wide GCS access.
+resource "google_storage_bucket_iam_member" "ci_cloudbuild_staging_bucket_writer" {
+  bucket = "${var.project_id}_cloudbuild"
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.ci.email}"
+}
+
+# Cloud Build now requires the SUBMITTING identity to be able to act as the build's own runtime
+# service account, separately from cloudbuild.builds.editor (which only covers triggering/
+# watching builds). No --service-account was passed to `gcloud builds submit`, so the build runs
+# as the project's default Compute Engine service account - also found only by running deploy.yml
+# for real, the same way the staging-bucket gap above was.
+resource "google_service_account_iam_member" "ci_acts_as_compute_default_sa" {
+  service_account_id = data.google_compute_default_service_account.default.name
+  role               = "roles/iam.serviceAccountUser"
+  member             = "serviceAccount:${google_service_account.ci.email}"
 }
 
 # Deploy new revisions to the 3 EXISTING Cloud Run services - not create/delete services, and
